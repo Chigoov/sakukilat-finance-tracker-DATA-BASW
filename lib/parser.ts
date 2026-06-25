@@ -4,7 +4,8 @@
  *   "makan soto 25k gopay"
  *   "terima gaji 5jt transfer"
  *   "beli kopi 18.500 tunai"
- *   "bayar listrik 200rb"
+ *   "ongkir grab stasiun tawang 38k ovo"
+ *   "bayar listrik 38,500 bca"
  */
 
 export type PaymentMethod =
@@ -16,6 +17,7 @@ export type PaymentMethod =
   | 'bni'
   | 'bri'
   | 'mandiri'
+  | 'jago'
   | 'tunai'
   | 'transfer'
   | 'qris'
@@ -48,136 +50,237 @@ export interface ParsedTransaction {
 }
 
 // ── Payment method keywords ──────────────────────────────────────────────────
-const PAYMENT_KEYWORDS: Record<PaymentMethod, string[]> = {
-  gopay:     ['gopay', 'gp'],
-  ovo:       ['ovo'],
-  dana:      ['dana'],
-  shopeepay: ['shopeepay', 'spay', 'shopee'],
-  bca:       ['bca', 'm-bca', 'klikbca'],
-  bni:       ['bni'],
-  bri:       ['bri', 'brimo'],
-  mandiri:   ['mandiri', 'livin'],
-  tunai:     ['tunai', 'cash', 'kontan'],
-  transfer:  ['transfer', 'tf'],
-  qris:      ['qris'],
-  kartu:     ['kartu', 'debit', 'kredit', 'cc'],
-  lainnya:   [],
+// Each entry: [exactTokens[], substringTokens[]]
+// exactTokens  → matched only against a complete whitespace-split token
+// substringTokens → also matched if the token *contains* the keyword
+// This prevents "bca" from matching inside "abca" etc.
+const PAYMENT_MAP: Array<{ method: PaymentMethod; exact: string[]; contains: string[] }> = [
+  { method: 'gopay',     exact: ['gopay', 'gp'],                        contains: [] },
+  { method: 'ovo',       exact: ['ovo'],                                 contains: [] },
+  { method: 'dana',      exact: ['dana'],                                contains: [] },
+  { method: 'shopeepay', exact: ['shopeepay', 'spay'],                   contains: ['shopeepay'] },
+  { method: 'qris',      exact: ['qris'],                                contains: [] },
+  { method: 'jago',      exact: ['jago'],                                contains: [] },
+  { method: 'bca',       exact: ['bca', 'klikbca'],                      contains: [] },
+  { method: 'bni',       exact: ['bni'],                                 contains: [] },
+  { method: 'bri',       exact: ['bri', 'brimo'],                        contains: [] },
+  { method: 'mandiri',   exact: ['mandiri', 'livin'],                    contains: [] },
+  { method: 'kartu',     exact: ['kartu', 'debit', 'kredit', 'cc'],      contains: [] },
+  { method: 'transfer',  exact: ['transfer', 'tf'],                      contains: [] },
+  { method: 'tunai',     exact: ['tunai', 'cash', 'kontan'],             contains: [] },
+]
+
+// Flat set of all payment token strings (for description stripping)
+function buildPaymentTokenSet(): Set<string> {
+  const s = new Set<string>()
+  for (const entry of PAYMENT_MAP) {
+    entry.exact.forEach(kw => s.add(kw))
+    entry.contains.forEach(kw => s.add(kw))
+  }
+  return s
 }
+const ALL_PAYMENT_TOKENS = buildPaymentTokenSet()
 
 // ── Income keywords ──────────────────────────────────────────────────────────
 const INCOME_KEYWORDS = [
   'gaji', 'salary', 'terima', 'dapat', 'pemasukan', 'income',
-  'bonus', 'komisi', 'dividen', 'honor', 'fee', 'jual', 'bayar ke',
-  'transfer masuk', 'refund', 'cashback', 'hadiah',
+  'bonus', 'komisi', 'dividen', 'honor', 'fee', 'jual',
+  'refund', 'cashback', 'hadiah', 'thr', 'freelance',
 ]
 
 // ── Category keyword map ─────────────────────────────────────────────────────
+// Keywords are matched as whole words against the lowercased description
+// (using a word-boundary aware check), preventing partial false-matches.
 const CATEGORY_KEYWORDS: Record<Category, string[]> = {
   makanan: [
-    'makan', 'minum', 'kopi', 'teh', 'nasi', 'soto', 'bakso', 'mie',
+    'makan', 'minum', 'kopi', 'teh', 'nasi', 'soto', 'bakso',
     'ayam', 'pizza', 'burger', 'sushi', 'resto', 'warung', 'kantin',
     'cafe', 'kafe', 'snack', 'camilan', 'jajan', 'boba', 'juice',
-    'mcdonalds', 'kfc', 'indomaret', 'alfamart', 'grab food', 'gofood',
-    'shopee food', 'tokopedia food', 'pecel', 'rawon', 'sate',
-    'martabak', 'gorengan', 'mi', 'mie ayam', 'indomie', 'es',
+    'mcdonalds', 'kfc', 'gofood', 'shopeefood', 'pecel', 'rawon', 'sate',
+    'martabak', 'gorengan', 'indomie', 'nasgor', 'esteh', 'mie', 'mi',
+    'es', 'minuman', 'sarapan', 'makan siang', 'makan malam',
   ],
   transportasi: [
-    'bensin', 'bbm', 'parkir', 'tol', 'ojek', 'gojek', 'grab',
+    'ongkir', 'bensin', 'bbm', 'parkir', 'tol', 'ojek', 'gojek', 'grab',
     'taxi', 'taksi', 'busway', 'transjakarta', 'kereta', 'commuter',
-    'krl', 'mrt', 'lrt', 'bis', 'angkot', 'travel', 'pesawat',
-    'tiket', 'uber', 'maxim', 'servis motor', 'servis mobil', 'cuci',
+    'krl', 'mrt', 'lrt', 'bis', 'angkot', 'pesawat',
+    'tiket', 'uber', 'maxim', 'servis motor', 'servis mobil',
   ],
   belanja: [
-    'beli', 'belanja', 'shopee', 'tokopedia', 'lazada', 'tiktok shop',
+    'beli', 'belanja', 'shopee', 'tokopedia', 'lazada', 'tiktokshop',
     'baju', 'celana', 'sepatu', 'tas', 'elektronik', 'hp', 'laptop',
     'charger', 'kabel', 'aksesoris', 'kosmetik', 'skincare', 'parfum',
-    'buku', 'alat tulis', 'peralatan', 'furniture', 'supermarket',
+    'buku', 'peralatan', 'furniture', 'supermarket',
   ],
   hiburan: [
     'netflix', 'spotify', 'youtube', 'game', 'bioskop', 'film',
-    'konser', 'event', 'tiket nonton', 'steam', 'playstation',
-    'xbox', 'disney+', 'prime', 'vidio', 'cinema',
+    'konser', 'event', 'steam', 'playstation', 'xbox', 'disney',
+    'prime', 'vidio', 'cinema',
   ],
   kesehatan: [
-    'dokter', 'rumah sakit', 'rs', 'klinik', 'apotek', 'obat',
-    'vitamin', 'suplemen', 'gym', 'fitness', 'olahraga', 'sport',
-    'periksa', 'laboratorium', 'lab', 'radiologi', 'dental', 'gigi',
+    'dokter', 'rumah sakit', 'klinik', 'apotek', 'obat',
+    'vitamin', 'suplemen', 'gym', 'fitness', 'olahraga',
+    'periksa', 'laboratorium', 'dental', 'gigi',
   ],
   pendidikan: [
     'kursus', 'les', 'bimbel', 'sekolah', 'kampus', 'kuliah',
-    'spp', 'ukt', 'buku pelajaran', 'udemy', 'coursera', 'dicoding',
+    'spp', 'ukt', 'udemy', 'coursera', 'dicoding',
     'ruangguru', 'zenius', 'seminar', 'pelatihan', 'workshop',
   ],
   tagihan: [
-    'listrik', 'pln', 'air', 'pdam', 'internet', 'wifi', 'speedy',
-    'indihome', 'telkom', 'pulsa', 'paket data', 'tv kabel',
+    'listrik', 'pln', 'air', 'pdam', 'internet', 'wifi',
+    'indihome', 'telkom', 'pulsa', 'paket data',
     'iuran', 'pajak', 'bpjs', 'asuransi', 'cicilan', 'angsuran',
-    'kpr', 'kredit', 'tagihan', 'bayar',
+    'kpr', 'tagihan', 'bayar', 'langganan',
   ],
   gaji: [
     'gaji', 'salary', 'upah', 'honor', 'thr', 'bonus', 'komisi',
-    'insentif', 'fee', 'honorarium',
+    'insentif', 'honorarium', 'freelance',
   ],
   investasi: [
-    'investasi', 'saham', 'reksadana', 'reksa dana', 'crypto',
-    'bitcoin', 'ethereum', 'emas', 'deposito', 'obligasi', 'tabungan',
+    'investasi', 'saham', 'reksadana', 'crypto',
+    'bitcoin', 'ethereum', 'emas', 'deposito', 'obligasi',
     'nabung', 'bibit', 'ajaib',
   ],
   transfer: [
-    'transfer', 'kirim', 'tf', 'setor', 'tarik tunai',
+    'transfer', 'kirim', 'setor', 'tarik tunai',
   ],
   lainnya: [],
 }
 
-// ── Amount parser ────────────────────────────────────────────────────────────
-function parseAmount(token: string): number | null {
-  // Normalize
+// ── Amount normalizer ────────────────────────────────────────────────────────
+/**
+ * Converts a raw number string (possibly with Indonesian-style separators)
+ * into a plain float. Rules:
+ *   - Dot as thousands separator: "38.500" → 38500
+ *     Heuristic: if there's exactly one dot AND the substring after it is
+ *     exactly 3 digits, treat dot as thousands sep (no fractional part).
+ *   - Comma as thousands separator: "38,500" → 38500
+ *     Same heuristic applies for a single comma + 3 trailing digits.
+ *   - Mixed "1.500.000" → 1500000 (multiple dots → all are thousands seps)
+ *   - Standard decimal "18.5" / "1,5" → kept as-is
+ */
+function normalizeNumberString(raw: string): number {
+  const s = raw.trim()
+
+  // Multiple dots → all are thousands separators (e.g. "1.500.000")
+  const dotCount = (s.match(/\./g) || []).length
+  if (dotCount > 1) {
+    return parseFloat(s.replace(/\./g, ''))
+  }
+
+  // Multiple commas → extremely rare, treat first as thousands sep
+  const commaCount = (s.match(/,/g) || []).length
+  if (commaCount > 1) {
+    return parseFloat(s.replace(/,/g, ''))
+  }
+
+  // Single dot
+  if (dotCount === 1) {
+    const parts = s.split('.')
+    // "38.500" — right side is exactly 3 digits → thousands separator
+    if (parts[1].length === 3) {
+      return parseFloat(s.replace('.', ''))
+    }
+    // "18.5" or "1.50" → genuine decimal
+    return parseFloat(s)
+  }
+
+  // Single comma
+  if (commaCount === 1) {
+    const parts = s.split(',')
+    // "38,500" → thousands separator
+    if (parts[1].length === 3) {
+      return parseFloat(s.replace(',', ''))
+    }
+    // "1,5" → decimal (European style)
+    return parseFloat(s.replace(',', '.'))
+  }
+
+  // Plain integer string "38500"
+  return parseFloat(s)
+}
+
+// ── Amount token parser ──────────────────────────────────────────────────────
+/**
+ * Attempts to parse a single whitespace-split token as a currency amount.
+ * Returns null if the token is not an amount token.
+ */
+function parseAmountToken(token: string): number | null {
   const t = token.toLowerCase().trim()
 
-  // Patterns: 25k, 25rb, 25ribu, 2jt, 2juta, 1.5jt, 18.500, 200000
-  const withK  = t.match(/^([\d]+(?:[.,]\d+)?)\s*k$/)
-  const withRb = t.match(/^([\d]+(?:[.,]\d+)?)\s*(?:rb|ribu)$/)
-  const withJt = t.match(/^([\d]+(?:[.,]\d+)?)\s*(?:jt|juta)$/)
-  const withM  = t.match(/^([\d]+(?:[.,]\d+)?)\s*(?:m|miliar|milyar)$/)
-  const plain  = t.match(/^[\d.,]+$/)
+  // suffix-based patterns — capture numeric part then multiply
+  // supports: 25k, 25K, 25rb, 25ribu, 2jt, 2juta, 1.5jt, 1,5jt, 3m, 3miliar
+  const suffixPattern = /^([\d]+(?:[.,]\d+)?)\s*(k|rb|ribu|jt|juta|m|miliar|milyar)$/
+  const suffixMatch = t.match(suffixPattern)
 
-  const toNum = (s: string) => parseFloat(s.replace(',', '.'))
+  if (suffixMatch) {
+    const numPart = normalizeNumberString(suffixMatch[1])
+    const suffix  = suffixMatch[2]
+    if (suffix === 'k' || suffix === 'rb' || suffix === 'ribu') return numPart * 1_000
+    if (suffix === 'jt' || suffix === 'juta')                   return numPart * 1_000_000
+    if (suffix === 'm' || suffix === 'miliar' || suffix === 'milyar') return numPart * 1_000_000_000
+  }
 
-  if (withK)  return toNum(withK[1])  * 1_000
-  if (withRb) return toNum(withRb[1]) * 1_000
-  if (withJt) return toNum(withJt[1]) * 1_000_000
-  if (withM)  return toNum(withM[1])  * 1_000_000_000
-
-  if (plain) {
-    // Handle "18.500" (Indonesian thousands separator) vs "18.5" (decimal)
-    const cleaned = t.replace(/\./g, '').replace(',', '.')
-    const val = parseFloat(cleaned)
+  // plain numeric token (digits, dots, commas only)
+  if (/^[\d.,]+$/.test(t)) {
+    const val = normalizeNumberString(t)
     return isNaN(val) ? null : val
   }
 
   return null
 }
 
-// ── Detect payment method ───────────────────────────────────────────────────
+// ── Detect payment method ────────────────────────────────────────────────────
+/**
+ * Scans tokens left-to-right and returns the first payment method found.
+ * Uses exact matching by default; the `contains` list allows substring
+ * matching for compound keywords like "shopeepay".
+ * Defaults to 'tunai' (cash) when no method is detected.
+ */
 function detectPaymentMethod(tokens: string[]): PaymentMethod {
   for (const token of tokens) {
-    for (const [method, keywords] of Object.entries(PAYMENT_KEYWORDS) as [PaymentMethod, string[]][]) {
-      if (keywords.some(kw => token.toLowerCase() === kw || token.toLowerCase().includes(kw))) {
-        return method
-      }
+    const tl = token.toLowerCase()
+    for (const entry of PAYMENT_MAP) {
+      if (entry.exact.includes(tl)) return entry.method
+      if (entry.contains.some(kw => tl.includes(kw))) return entry.method
     }
   }
-  return 'lainnya'
+  // Default: cash / tunai
+  return 'tunai'
 }
 
-// ── Detect category ─────────────────────────────────────────────────────────
+// ── Token is a payment keyword? ──────────────────────────────────────────────
+function isPaymentToken(token: string): boolean {
+  const tl = token.toLowerCase()
+  for (const entry of PAYMENT_MAP) {
+    if (entry.exact.includes(tl)) return true
+    if (entry.contains.some(kw => tl.includes(kw))) return true
+  }
+  return false
+}
+
+// ── Detect category ──────────────────────────────────────────────────────────
+/**
+ * Matches description text against category keyword lists.
+ * Uses word-boundary detection: keyword must appear as a standalone word
+ * (surrounded by non-word chars or string edges) to prevent false positives
+ * like "bca" matching inside "abcana".
+ */
 function detectCategory(text: string, type: TransactionType): Category {
   const lower = text.toLowerCase()
+
+  // Helper: test if `kw` appears as a whole-word match in `str`
+  const wordMatch = (str: string, kw: string): boolean => {
+    // Use a simple regex word-boundary approach
+    const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    return new RegExp(`(?<![\\w])${escaped}(?![\\w])`, 'i').test(str)
+  }
 
   for (const [category, keywords] of Object.entries(CATEGORY_KEYWORDS) as [Category, string[]][]) {
     if (category === 'lainnya') continue
     for (const kw of keywords) {
-      if (lower.includes(kw)) return category
+      if (wordMatch(lower, kw)) return category
     }
   }
 
@@ -185,7 +288,7 @@ function detectCategory(text: string, type: TransactionType): Category {
   return 'lainnya'
 }
 
-// ── Detect transaction type ─────────────────────────────────────────────────
+// ── Detect transaction type ──────────────────────────────────────────────────
 function detectType(text: string): TransactionType {
   const lower = text.toLowerCase()
   for (const kw of INCOME_KEYWORDS) {
@@ -194,19 +297,21 @@ function detectType(text: string): TransactionType {
   return 'expense'
 }
 
-// ── Main parser ─────────────────────────────────────────────────────────────
+// ── Main parser ──────────────────────────────────────────────────────────────
 export function parseTransaction(input: string): ParsedTransaction | null {
   const trimmed = input.trim()
   if (!trimmed) return null
 
   const tokens = trimmed.split(/\s+/)
 
-  // Find amount token
+  // ── Step 1: Find the LAST amount token ──────────────────────────────────
+  // Scanning from the end is more robust: in "ongkir grab 38k ovo",
+  // the amount always comes just before the payment method.
   let amountIndex = -1
   let amount = 0
 
-  for (let i = 0; i < tokens.length; i++) {
-    const parsed = parseAmount(tokens[i])
+  for (let i = tokens.length - 1; i >= 0; i--) {
+    const parsed = parseAmountToken(tokens[i])
     if (parsed !== null && parsed > 0) {
       amount = parsed
       amountIndex = i
@@ -214,30 +319,37 @@ export function parseTransaction(input: string): ParsedTransaction | null {
     }
   }
 
-  if (amount === 0) return null
+  if (amount === 0 || amountIndex === -1) return null
 
-  // Build description from non-amount, non-payment tokens
+  // ── Step 2: Detect payment method ───────────────────────────────────────
   const paymentMethod = detectPaymentMethod(tokens)
-  const paymentKeywords = new Set<string>()
-  for (const [, keywords] of Object.entries(PAYMENT_KEYWORDS)) {
-    keywords.forEach(kw => paymentKeywords.add(kw.toLowerCase()))
-  }
 
+  // ── Step 3: Build description ────────────────────────────────────────────
+  // Include only tokens that are:
+  //   - NOT the amount token (by index)
+  //   - NOT a payment method token (by value)
+  // This ensures "ongkir grab stasiun tawang 38k ovo" →
+  // description = "ongkir grab stasiun tawang"
   const descTokens = tokens.filter((t, i) => {
     if (i === amountIndex) return false
-    if (paymentKeywords.has(t.toLowerCase())) return false
+    if (isPaymentToken(t)) return false
     return true
   })
 
   const description = descTokens.join(' ').trim() || 'Transaksi'
 
-  const type = detectType(trimmed)
-  const category = detectCategory(trimmed, type)
+  // ── Step 4: Classify ─────────────────────────────────────────────────────
+  const type     = detectType(trimmed)
+  const category = detectCategory(description, type)
 
-  // Confidence: high if we found amount + description + payment method
-  const hasDescription = descTokens.length > 0
-  const hasPayment = paymentMethod !== 'lainnya'
-  const confidence = hasDescription && hasPayment ? 0.95 : hasDescription ? 0.75 : 0.5
+  // ── Step 5: Confidence score ─────────────────────────────────────────────
+  // Deduct for missing signals; add for explicit payment method detection
+  const hasDescription    = descTokens.length > 0
+  const hasExplicitMethod = paymentMethod !== 'tunai' // tunai = default fallback
+  const confidence =
+    !hasDescription       ? 0.4
+    : hasExplicitMethod   ? 0.95
+    :                       0.75
 
   return {
     description,
