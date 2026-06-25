@@ -1,12 +1,12 @@
-import type { Category, PaymentMethod, TransactionType } from './parser'
+import type { TransactionType } from './parser'
 
 export interface Transaction {
   id: string
   description: string
   amount: number
   type: TransactionType
-  category: Category
-  paymentMethod: PaymentMethod
+  category: string // built-in or custom category id
+  paymentMethod: string // built-in or custom payment id
   date: Date
   isPending?: boolean // optimistic UI state
   syncStatus?: 'synced' | 'syncing' | 'error'
@@ -113,6 +113,73 @@ export const MOCK_TRANSACTIONS: Transaction[] = [
     date: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000),
     syncStatus: 'synced',
   },
+]
+
+// ── Historical seed generator ────────────────────────────────────────────────
+// Deterministically spreads realistic transactions across the past ~90 days so
+// the calendar heatmap & trend charts have rich, believable data on first load.
+const HISTORY_TEMPLATES: Array<Omit<Transaction, 'id' | 'date'>> = [
+  { description: 'Kopi pagi',        amount: 22_000,  type: 'expense', category: 'makanan',      paymentMethod: 'gopay',     syncStatus: 'synced' },
+  { description: 'Makan siang',      amount: 35_000,  type: 'expense', category: 'makanan',      paymentMethod: 'ovo',       syncStatus: 'synced' },
+  { description: 'Ojek ke kantor',   amount: 24_000,  type: 'expense', category: 'transportasi', paymentMethod: 'gopay',     syncStatus: 'synced' },
+  { description: 'Bensin motor',     amount: 30_000,  type: 'expense', category: 'transportasi', paymentMethod: 'tunai',     syncStatus: 'synced' },
+  { description: 'Belanja bulanan',  amount: 185_000, type: 'expense', category: 'belanja',      paymentMethod: 'bca',       syncStatus: 'synced' },
+  { description: 'Pulsa & data',     amount: 50_000,  type: 'expense', category: 'tagihan',      paymentMethod: 'dana',      syncStatus: 'synced' },
+  { description: 'Nonton bioskop',   amount: 60_000,  type: 'expense', category: 'hiburan',      paymentMethod: 'shopeepay', syncStatus: 'synced' },
+  { description: 'Beli camilan',     amount: 28_000,  type: 'expense', category: 'makanan',      paymentMethod: 'qris',      syncStatus: 'synced' },
+  { description: 'Vitamin',          amount: 75_000,  type: 'expense', category: 'kesehatan',    paymentMethod: 'bca',       syncStatus: 'synced' },
+  { description: 'Parkir mall',      amount: 10_000,  type: 'expense', category: 'transportasi', paymentMethod: 'tunai',     syncStatus: 'synced' },
+]
+
+function generateHistory(): Transaction[] {
+  const out: Transaction[] = []
+  const now = Date.now()
+  // pseudo-random but deterministic
+  let seed = 1337
+  const rand = () => {
+    seed = (seed * 9301 + 49297) % 233280
+    return seed / 233280
+  }
+
+  for (let daysAgo = 2; daysAgo <= 88; daysAgo++) {
+    // 0–3 transactions per day, weighted toward 1–2
+    const count = Math.floor(rand() * 3.2)
+    for (let j = 0; j < count; j++) {
+      const tpl = HISTORY_TEMPLATES[Math.floor(rand() * HISTORY_TEMPLATES.length)]
+      const jitter = 0.8 + rand() * 0.5 // ±amount variation
+      const d = new Date(now - daysAgo * 86_400_000)
+      d.setHours(8 + Math.floor(rand() * 12), Math.floor(rand() * 60), 0, 0)
+      out.push({
+        ...tpl,
+        id: `seed-${daysAgo}-${j}`,
+        amount: Math.round((tpl.amount * jitter) / 500) * 500,
+        date: d,
+      })
+    }
+  }
+
+  // a couple of monthly incomes for trend richness
+  for (let m = 1; m <= 2; m++) {
+    const d = new Date(now - m * 30 * 86_400_000)
+    d.setHours(9, 0, 0, 0)
+    out.push({
+      id: `seed-income-${m}`,
+      description: 'Gaji bulanan',
+      amount: 8_500_000,
+      type: 'income',
+      category: 'gaji',
+      paymentMethod: 'transfer',
+      date: d,
+      syncStatus: 'synced',
+    })
+  }
+
+  return out
+}
+
+export const SEED_TRANSACTIONS: Transaction[] = [
+  ...MOCK_TRANSACTIONS,
+  ...generateHistory(),
 ]
 
 export function generateId(): string {

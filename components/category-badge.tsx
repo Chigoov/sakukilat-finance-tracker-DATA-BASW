@@ -10,11 +10,12 @@ import {
   TrendingUp,
   ArrowRightLeft,
   MoreHorizontal,
+  Tag,
 } from 'lucide-react'
 import type { Category, PaymentMethod } from '@/lib/parser'
 import { cn } from '@/lib/utils'
 
-interface CategoryConfig {
+export interface CategoryConfig {
   icon: React.ComponentType<{ className?: string }>
   label: string
   color: string
@@ -44,6 +45,7 @@ export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
   bni:       'BNI',
   bri:       'BRI',
   mandiri:   'Mandiri',
+  jago:      'Jago',
   tunai:     'Tunai',
   transfer:  'Transfer',
   qris:      'QRIS',
@@ -51,14 +53,87 @@ export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
   lainnya:   'Lainnya',
 }
 
+// ── Custom (user-defined) registry ───────────────────────────────────────────
+// The store registers user-defined categories/payments here so that display
+// components can resolve labels & styling for arbitrary custom ids without
+// threading config through every prop.
+const CUSTOM_PALETTE = [
+  { color: 'text-[#38BDF8]', bg: 'bg-[rgba(56,189,248,0.12)]' },
+  { color: 'text-[#34D399]', bg: 'bg-[rgba(52,211,153,0.12)]' },
+  { color: 'text-[#FBBF24]', bg: 'bg-[rgba(251,191,36,0.12)]' },
+  { color: 'text-[#F472B6]', bg: 'bg-[rgba(244,114,182,0.12)]' },
+  { color: 'text-[#A78BFA]', bg: 'bg-[rgba(167,139,250,0.12)]' },
+  { color: 'text-[#FB923C]', bg: 'bg-[rgba(251,146,60,0.12)]' },
+]
+
+const customCategoryRegistry = new Map<string, CategoryConfig>()
+const customPaymentRegistry = new Map<string, string>()
+
+function hashIndex(id: string, mod: number): number {
+  let h = 0
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0
+  return h % mod
+}
+
+export function registerCustomCategories(cats: { id: string; label: string }[]) {
+  for (const c of cats) {
+    if (CATEGORY_CONFIG[c.id as Category]) continue
+    const palette = CUSTOM_PALETTE[hashIndex(c.id, CUSTOM_PALETTE.length)]
+    customCategoryRegistry.set(c.id, { icon: Tag, label: c.label, ...palette })
+  }
+}
+
+export function registerCustomPayments(pms: { id: string; label: string }[]) {
+  for (const p of pms) customPaymentRegistry.set(p.id, p.label)
+}
+
+/** Resolve a category id (built-in OR custom) to its display config. */
+export function getCategoryConfig(category: string): CategoryConfig {
+  return (
+    CATEGORY_CONFIG[category as Category] ??
+    customCategoryRegistry.get(category) ??
+    CATEGORY_CONFIG.lainnya
+  )
+}
+
+/** Resolve a payment method id (built-in OR custom) to its display label. */
+export function getPaymentLabel(method: string): string {
+  return (
+    PAYMENT_METHOD_LABELS[method as PaymentMethod] ??
+    customPaymentRegistry.get(method) ??
+    (method.charAt(0).toUpperCase() + method.slice(1))
+  )
+}
+
+// ── Raw hex colors for charts (Recharts can't read Tailwind classes) ──────────
+export const CATEGORY_HEX: Record<string, string> = {
+  makanan: '#FBBF24',
+  transportasi: '#60A5FA',
+  belanja: '#F472B6',
+  hiburan: '#A78BFA',
+  kesehatan: '#F87171',
+  pendidikan: '#34D399',
+  tagihan: '#38BDF8',
+  gaji: '#34D399',
+  investasi: '#2DD4BF',
+  transfer: '#6B7B9E',
+  lainnya: '#6B7B9E',
+}
+const CUSTOM_HEX = ['#38BDF8', '#34D399', '#FBBF24', '#F472B6', '#A78BFA', '#FB923C']
+
+/** Resolve a category id (built-in OR custom) to a raw hex color. */
+export function getCategoryHex(category: string): string {
+  return CATEGORY_HEX[category] ?? CUSTOM_HEX[hashIndex(category, CUSTOM_HEX.length)]
+}
+
 interface CategoryIconProps {
-  category: Category
+  category: string
   size?: 'sm' | 'md' | 'lg'
   className?: string
 }
 
 export function CategoryIcon({ category, size = 'md', className }: CategoryIconProps) {
-  const config = CATEGORY_CONFIG[category]
+  const config = getCategoryConfig(category)
   const Icon = config.icon
 
   const sizeClasses = {

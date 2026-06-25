@@ -2,9 +2,9 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { SendHorizonal, Sparkles, X, Loader2 } from 'lucide-react'
-import { parseTransaction, formatIDR } from '@/lib/parser'
+import { parseTransaction, formatIDR, type ParserExtras } from '@/lib/parser'
 import { cn } from '@/lib/utils'
-import { CATEGORY_CONFIG, PAYMENT_METHOD_LABELS } from './category-badge'
+import { getCategoryConfig, getPaymentLabel } from './category-badge'
 
 interface ParsePreview {
   description: string
@@ -30,9 +30,11 @@ interface SmartInputProps {
   onSubmit: (input: string) => void
   isSubmitting?: boolean
   className?: string
+  parserExtras?: ParserExtras
+  autoFocus?: boolean
 }
 
-export function SmartInput({ onSubmit, isSubmitting, className }: SmartInputProps) {
+export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, autoFocus }: SmartInputProps) {
   const [value, setValue] = useState('')
   const [preview, setPreview] = useState<ParsePreview | null>(null)
   const [focused, setFocused] = useState(false)
@@ -47,13 +49,18 @@ export function SmartInput({ onSubmit, isSubmitting, className }: SmartInputProp
     return () => clearInterval(interval)
   }, [])
 
+  // Optional autofocus (desktop top bar)
+  useEffect(() => {
+    if (autoFocus) inputRef.current?.focus()
+  }, [autoFocus])
+
   // Live parse preview
   useEffect(() => {
     if (!value.trim()) {
       setPreview(null)
       return
     }
-    const parsed = parseTransaction(value)
+    const parsed = parseTransaction(value, parserExtras)
     if (parsed && parsed.amount > 0) {
       setPreview({
         description: parsed.description,
@@ -66,7 +73,7 @@ export function SmartInput({ onSubmit, isSubmitting, className }: SmartInputProp
     } else {
       setPreview(null)
     }
-  }, [value])
+  }, [value, parserExtras])
 
   const handleSubmit = useCallback(() => {
     const trimmed = value.trim()
@@ -89,7 +96,7 @@ export function SmartInput({ onSubmit, isSubmitting, className }: SmartInputProp
     }
   }
 
-  const categoryConfig = preview ? CATEGORY_CONFIG[preview.category as keyof typeof CATEGORY_CONFIG] : null
+  const categoryConfig = preview ? getCategoryConfig(preview.category) : null
   const CategoryIcon = categoryConfig?.icon
 
   return (
@@ -109,7 +116,7 @@ export function SmartInput({ onSubmit, isSubmitting, className }: SmartInputProp
               </span>
               <span className="text-[var(--sk-text-dim)] text-xs">·</span>
               <span className="text-xs text-[var(--sk-text-muted)] mx-1.5 capitalize">
-                {PAYMENT_METHOD_LABELS[preview.paymentMethod as keyof typeof PAYMENT_METHOD_LABELS] ?? preview.paymentMethod}
+                {getPaymentLabel(preview.paymentMethod)}
               </span>
             </div>
             <span

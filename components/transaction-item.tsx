@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { Trash2, ChevronRight } from 'lucide-react'
 import { formatIDR, formatTime } from '@/lib/parser'
 import type { Transaction } from '@/lib/mock-data'
-import { CategoryIcon, SyncDot, CATEGORY_CONFIG, PAYMENT_METHOD_LABELS } from './category-badge'
+import { CategoryIcon, SyncDot, getCategoryConfig, getPaymentLabel } from './category-badge'
 import { cn } from '@/lib/utils'
 
 interface TransactionItemProps {
@@ -18,7 +18,7 @@ export function TransactionItem({ transaction, onDelete, isNew }: TransactionIte
   const [deleting, setDeleting] = useState(false)
 
   const isExpense = transaction.type === 'expense'
-  const config = CATEGORY_CONFIG[transaction.category]
+  const config = getCategoryConfig(transaction.category)
 
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -74,7 +74,7 @@ export function TransactionItem({ transaction, onDelete, isNew }: TransactionIte
             </span>
             <span className="text-[var(--sk-text-dim)] text-xs">·</span>
             <span className="text-xs text-[var(--sk-text-muted)]">
-              {PAYMENT_METHOD_LABELS[transaction.paymentMethod]}
+              {getPaymentLabel(transaction.paymentMethod)}
             </span>
             <span className="text-[var(--sk-text-dim)] text-xs">·</span>
             <span className="text-xs text-[var(--sk-text-dim)]">
@@ -128,7 +128,7 @@ export function TransactionItem({ transaction, onDelete, isNew }: TransactionIte
               <div>
                 <span className="text-[var(--sk-text-dim)] block mb-0.5">Metode</span>
                 <span className="font-medium text-[var(--sk-text)]">
-                  {PAYMENT_METHOD_LABELS[transaction.paymentMethod]}
+                  {getPaymentLabel(transaction.paymentMethod)}
                 </span>
               </div>
               <div>

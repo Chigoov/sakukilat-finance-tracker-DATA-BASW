@@ -43,10 +43,29 @@ export interface ParsedTransaction {
   description: string
   amount: number
   type: TransactionType
-  category: Category
-  paymentMethod: PaymentMethod
+  category: string // built-in Category id OR a custom category id
+  paymentMethod: string // built-in PaymentMethod id OR a custom payment id
   rawInput: string
   confidence: number // 0-1
+}
+
+/**
+ * User-defined slang that the parser should also recognize.
+ * Lets users teach SakuKilat their own payment apps & categories.
+ */
+export interface CustomPayment {
+  id: string
+  label: string
+  keywords: string[]
+}
+export interface CustomCategory {
+  id: string
+  label: string
+  keywords: string[]
+}
+export interface ParserExtras {
+  payments?: CustomPayment[]
+  categories?: CustomCategory[]
 }
 
 // ── Payment method keywords ──────────────────────────────────────────────────
@@ -238,9 +257,15 @@ function parseAmountToken(token: string): number | null {
  * matching for compound keywords like "shopeepay".
  * Defaults to 'tunai' (cash) when no method is detected.
  */
-function detectPaymentMethod(tokens: string[]): PaymentMethod {
+function detectPaymentMethod(tokens: string[], extras?: ParserExtras): string {
   for (const token of tokens) {
     const tl = token.toLowerCase()
+    // Custom user-defined payments take priority (their personal slang)
+    if (extras?.payments) {
+      for (const p of extras.payments) {
+        if (p.keywords.some(kw => tl === kw.toLowerCase())) return p.id
+      }
+    }
     for (const entry of PAYMENT_MAP) {
       if (entry.exact.includes(tl)) return entry.method
       if (entry.contains.some(kw => tl.includes(kw))) return entry.method
@@ -251,8 +276,13 @@ function detectPaymentMethod(tokens: string[]): PaymentMethod {
 }
 
 // ── Token is a payment keyword? ──────────────────────────────────────────────
-function isPaymentToken(token: string): boolean {
+function isPaymentToken(token: string, extras?: ParserExtras): boolean {
   const tl = token.toLowerCase()
+  if (extras?.payments) {
+    for (const p of extras.payments) {
+      if (p.keywords.some(kw => tl === kw.toLowerCase())) return true
+    }
+  }
   for (const entry of PAYMENT_MAP) {
     if (entry.exact.includes(tl)) return true
     if (entry.contains.some(kw => tl.includes(kw))) return true
@@ -267,7 +297,7 @@ function isPaymentToken(token: string): boolean {
  * (surrounded by non-word chars or string edges) to prevent false positives
  * like "bca" matching inside "abcana".
  */
-function detectCategory(text: string, type: TransactionType): Category {
+function detectCategory(text: string, type: TransactionType, extras?: ParserExtras): string {
   const lower = text.toLowerCase()
 
   // Helper: test if `kw` appears as a whole-word match in `str`
@@ -275,6 +305,15 @@ function detectCategory(text: string, type: TransactionType): Category {
     // Use a simple regex word-boundary approach
     const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     return new RegExp(`(?<![\\w])${escaped}(?![\\w])`, 'i').test(str)
+  }
+
+  // Custom user-defined categories take priority (their personal slang)
+  if (extras?.categories) {
+    for (const c of extras.categories) {
+      for (const kw of c.keywords) {
+        if (kw && wordMatch(lower, kw)) return c.id
+      }
+    }
   }
 
   for (const [category, keywords] of Object.entries(CATEGORY_KEYWORDS) as [Category, string[]][]) {
@@ -298,7 +337,7 @@ function detectType(text: string): TransactionType {
 }
 
 // ── Main parser ──────────────────────────────────────────────────────────────
-export function parseTransaction(input: string): ParsedTransaction | null {
+export function parseTransaction(input: string, extras?: ParserExtras): ParsedTransaction | null {
   const trimmed = input.trim()
   if (!trimmed) return null
 
@@ -322,7 +361,7 @@ export function parseTransaction(input: string): ParsedTransaction | null {
   if (amount === 0 || amountIndex === -1) return null
 
   // ── Step 2: Detect payment method ───────────────────────────────────────
-  const paymentMethod = detectPaymentMethod(tokens)
+  const paymentMethod = detectPaymentMethod(tokens, extras)
 
   // ── Step 3: Build description ────────────────────────────────────────────
   // Include only tokens that are:
@@ -332,7 +371,7 @@ export function parseTransaction(input: string): ParsedTransaction | null {
   // description = "ongkir grab stasiun tawang"
   const descTokens = tokens.filter((t, i) => {
     if (i === amountIndex) return false
-    if (isPaymentToken(t)) return false
+    if (isPaymentToken(t, extras)) return false
     return true
   })
 
@@ -340,7 +379,7 @@ export function parseTransaction(input: string): ParsedTransaction | null {
 
   // ── Step 4: Classify ─────────────────────────────────────────────────────
   const type     = detectType(trimmed)
-  const category = detectCategory(description, type)
+  const category = detectCategory(description, type, extras)
 
   // ── Step 5: Confidence score ─────────────────────────────────────────────
   // Deduct for missing signals; add for explicit payment method detection
