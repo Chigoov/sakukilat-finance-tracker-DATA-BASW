@@ -1,17 +1,20 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { SendHorizonal, Sparkles, X, Loader2 } from 'lucide-react'
-import { parseTransaction, formatIDR, type ParserExtras } from '@/lib/parser'
+import { ArrowRightLeft, PiggyBank, SendHorizonal, Sparkles, X, Loader2 } from 'lucide-react'
+import { parseEntry, formatIDR, type ParserExtras } from '@/lib/parser'
 import { cn } from '@/lib/utils'
 import { getCategoryConfig, getPaymentLabel } from './category-badge'
 
 interface ParsePreview {
+  kind: 'transaction' | 'transfer' | 'saving'
   description: string
   amount: number
-  type: 'expense' | 'income'
-  category: string
-  paymentMethod: string
+  type?: 'expense' | 'income'
+  category?: string
+  paymentMethod?: string
+  fromWalletId?: string
+  toWalletId?: string
   confidence: number
 }
 
@@ -60,16 +63,28 @@ export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, au
       setPreview(null)
       return
     }
-    const parsed = parseTransaction(value, parserExtras)
+    const parsed = parseEntry(value, parserExtras)
     if (parsed && parsed.amount > 0) {
-      setPreview({
-        description: parsed.description,
-        amount: parsed.amount,
-        type: parsed.type,
-        category: parsed.category,
-        paymentMethod: parsed.paymentMethod,
-        confidence: parsed.confidence,
-      })
+      if (parsed.kind === 'transfer' || parsed.kind === 'saving') {
+        setPreview({
+          kind: parsed.kind,
+          description: parsed.description,
+          amount: parsed.amount,
+          fromWalletId: parsed.fromWalletId,
+          toWalletId: parsed.toWalletId,
+          confidence: parsed.confidence,
+        })
+      } else {
+        setPreview({
+          kind: 'transaction',
+          description: parsed.description,
+          amount: parsed.amount,
+          type: parsed.type,
+          category: parsed.category,
+          paymentMethod: parsed.paymentMethod,
+          confidence: parsed.confidence,
+        })
+      }
     } else {
       setPreview(null)
     }
@@ -96,8 +111,9 @@ export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, au
     }
   }
 
-  const categoryConfig = preview ? getCategoryConfig(preview.category) : null
+  const categoryConfig = preview?.category ? getCategoryConfig(preview.category) : null
   const CategoryIcon = categoryConfig?.icon
+  const MoveIcon = preview?.kind === 'saving' ? PiggyBank : ArrowRightLeft
 
   return (
     <div className={cn('w-full', className)}>
@@ -105,28 +121,36 @@ export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, au
       {preview && focused && (
         <div className="animate-slide-up mb-2 px-1">
           <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-[var(--sk-surface-2)] border border-[var(--sk-border-2)]">
-            {CategoryIcon && (
+            {preview.kind !== 'transaction' ? (
+              <div className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0 bg-[var(--sk-cyan-dim)]">
+                <MoveIcon className="w-3.5 h-3.5 text-[var(--sk-cyan)]" />
+              </div>
+            ) : CategoryIcon && categoryConfig ? (
               <div className={cn('w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0', categoryConfig.bg)}>
                 <CategoryIcon className={cn('w-3.5 h-3.5', categoryConfig.color)} />
               </div>
-            )}
+            ) : null}
             <div className="flex-1 min-w-0">
               <span className="text-xs text-[var(--sk-text-muted)] mr-1.5 capitalize truncate">
                 {preview.description}
               </span>
               <span className="text-[var(--sk-text-dim)] text-xs">·</span>
               <span className="text-xs text-[var(--sk-text-muted)] mx-1.5 capitalize">
-                {getPaymentLabel(preview.paymentMethod)}
+                {preview.kind === 'transaction'
+                  ? getPaymentLabel(preview.paymentMethod ?? 'tunai')
+                  : `${getPaymentLabel(preview.fromWalletId ?? '')} -> ${getPaymentLabel(preview.toWalletId ?? '')}`}
               </span>
             </div>
             <span
               className={cn(
                 'text-sm font-bold tabular-nums flex-shrink-0',
-                preview.type === 'expense' ? 'text-[var(--sk-red)]' : 'text-[var(--sk-green)]'
+                preview.kind !== 'transaction'
+                  ? 'text-[var(--sk-cyan)]'
+                  : preview.type === 'expense' ? 'text-[var(--sk-red)]' : 'text-[var(--sk-green)]'
               )}
               data-amount
             >
-              {preview.type === 'expense' ? '−' : '+'}{formatIDR(preview.amount)}
+              {preview.kind !== 'transaction' ? '' : preview.type === 'expense' ? '-' : '+'}{formatIDR(preview.amount)}
             </span>
             {/* Confidence indicator */}
             <div

@@ -1,15 +1,18 @@
 {
-  "name": "SakuKilat — Pencatat Keuangan",
+  "id": "/",
+  "name": "SakuKilat - Pencatat Keuangan",
   "short_name": "SakuKilat",
   "description": "Pencatat keuangan pribadi cepat dengan input bahasa natural",
   "start_url": "/",
-  "display": "standalone",
-  "background_color": "#0B0F19",
-  "theme_color": "#0B0F19",
-  "orientation": "portrait-primary",
   "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui", "browser"],
+  "background_color": "#090D16",
+  "theme_color": "#090D16",
   "lang": "id",
+  "dir": "ltr",
   "categories": ["finance", "productivity"],
+  "prefer_related_applications": false,
   "icons": [
     {
       "src": "/icon-192.png",

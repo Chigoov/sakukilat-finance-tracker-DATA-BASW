@@ -1,5 +1,17 @@
 import type { TransactionType } from './parser'
 
+export type TransactionKind = 'transaction' | 'transfer' | 'saving'
+export type WalletType = 'cash' | 'bank' | 'ewallet' | 'card' | 'savings' | 'other'
+
+export interface WalletAccount {
+  id: string
+  label: string
+  type: WalletType
+  balance: number
+  keywords: string[]
+  isBuiltIn?: boolean
+}
+
 export interface Transaction {
   id: string
   description: string
@@ -7,20 +19,39 @@ export interface Transaction {
   type: TransactionType
   category: string // built-in or custom category id
   paymentMethod: string // built-in or custom payment id
+  kind?: TransactionKind
+  fromWalletId?: string
+  toWalletId?: string
   date: Date
   isPending?: boolean // optimistic UI state
   syncStatus?: 'synced' | 'syncing' | 'error'
 }
 
-export const MOCK_TRANSACTIONS: Transaction[] = [
-  {
+export const SEED_WALLETS: WalletAccount[] = [
+  { id: 'tunai', label: 'Cash', type: 'cash', balance: 650_000, keywords: ['tunai', 'cash', 'kontan'], isBuiltIn: true },
+  { id: 'bca', label: 'BCA', type: 'bank', balance: 4_850_000, keywords: ['bca', 'klikbca'], isBuiltIn: true },
+  { id: 'seabank', label: 'SeaBank', type: 'bank', balance: 1_200_000, keywords: ['seabank', 'sea'], isBuiltIn: true },
+  { id: 'gopay', label: 'GoPay', type: 'ewallet', balance: 240_000, keywords: ['gopay', 'gp'], isBuiltIn: true },
+  { id: 'ovo', label: 'OVO', type: 'ewallet', balance: 185_000, keywords: ['ovo'], isBuiltIn: true },
+  { id: 'dana', label: 'DANA', type: 'ewallet', balance: 165_000, keywords: ['dana'], isBuiltIn: true },
+  { id: 'shopeepay', label: 'ShopeePay', type: 'ewallet', balance: 90_000, keywords: ['shopeepay', 'spay'], isBuiltIn: true },
+  { id: 'tabungan', label: 'Tabungan', type: 'savings', balance: 2_500_000, keywords: ['tabungan', 'simpan', 'simpanan'], isBuiltIn: true },
+]
+
+export function createSeedWallets(): WalletAccount[] {
+  return SEED_WALLETS.map(wallet => ({ ...wallet, keywords: [...wallet.keywords] }))
+}
+
+function createMockTransactions(now: number): Transaction[] {
+  return [
+    {
     id: 'txn-001',
     description: 'Makan soto ayam',
     amount: 25_000,
     type: 'expense',
     category: 'makanan',
     paymentMethod: 'gopay',
-    date: new Date(Date.now() - 1 * 60 * 60 * 1000), // 1 jam lalu
+    date: new Date(now - 1 * 60 * 60 * 1000), // 1 jam lalu
     syncStatus: 'synced',
   },
   {
@@ -30,7 +61,7 @@ export const MOCK_TRANSACTIONS: Transaction[] = [
     type: 'income',
     category: 'gaji',
     paymentMethod: 'transfer',
-    date: new Date(Date.now() - 2 * 60 * 60 * 1000),
+    date: new Date(now - 2 * 60 * 60 * 1000),
     syncStatus: 'synced',
   },
   {
@@ -40,7 +71,7 @@ export const MOCK_TRANSACTIONS: Transaction[] = [
     type: 'expense',
     category: 'transportasi',
     paymentMethod: 'tunai',
-    date: new Date(Date.now() - 5 * 60 * 60 * 1000),
+    date: new Date(now - 5 * 60 * 60 * 1000),
     syncStatus: 'synced',
   },
   {
@@ -50,7 +81,7 @@ export const MOCK_TRANSACTIONS: Transaction[] = [
     type: 'expense',
     category: 'makanan',
     paymentMethod: 'ovo',
-    date: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000), // Kemarin
+    date: new Date(now - 1 * 24 * 60 * 60 * 1000), // Kemarin
     syncStatus: 'synced',
   },
   {
@@ -60,7 +91,7 @@ export const MOCK_TRANSACTIONS: Transaction[] = [
     type: 'expense',
     category: 'tagihan',
     paymentMethod: 'bca',
-    date: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000),
+    date: new Date(now - 1 * 24 * 60 * 60 * 1000),
     syncStatus: 'synced',
   },
   {
@@ -70,7 +101,7 @@ export const MOCK_TRANSACTIONS: Transaction[] = [
     type: 'expense',
     category: 'hiburan',
     paymentMethod: 'kartu',
-    date: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
+    date: new Date(now - 2 * 24 * 60 * 60 * 1000),
     syncStatus: 'synced',
   },
   {
@@ -80,7 +111,7 @@ export const MOCK_TRANSACTIONS: Transaction[] = [
     type: 'expense',
     category: 'belanja',
     paymentMethod: 'shopeepay',
-    date: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000),
+    date: new Date(now - 3 * 24 * 60 * 60 * 1000),
     syncStatus: 'synced',
   },
   {
@@ -90,7 +121,7 @@ export const MOCK_TRANSACTIONS: Transaction[] = [
     type: 'income',
     category: 'gaji',
     paymentMethod: 'transfer',
-    date: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000),
+    date: new Date(now - 4 * 24 * 60 * 60 * 1000),
     syncStatus: 'synced',
   },
   {
@@ -100,7 +131,7 @@ export const MOCK_TRANSACTIONS: Transaction[] = [
     type: 'expense',
     category: 'transportasi',
     paymentMethod: 'dana',
-    date: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000),
+    date: new Date(now - 4 * 24 * 60 * 60 * 1000),
     syncStatus: 'synced',
   },
   {
@@ -110,10 +141,11 @@ export const MOCK_TRANSACTIONS: Transaction[] = [
     type: 'expense',
     category: 'kesehatan',
     paymentMethod: 'bri',
-    date: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000),
+    date: new Date(now - 5 * 24 * 60 * 60 * 1000),
     syncStatus: 'synced',
   },
-]
+  ]
+}
 
 // ── Historical seed generator ────────────────────────────────────────────────
 // Deterministically spreads realistic transactions across the past ~90 days so
@@ -131,9 +163,8 @@ const HISTORY_TEMPLATES: Array<Omit<Transaction, 'id' | 'date'>> = [
   { description: 'Parkir mall',      amount: 10_000,  type: 'expense', category: 'transportasi', paymentMethod: 'tunai',     syncStatus: 'synced' },
 ]
 
-function generateHistory(): Transaction[] {
+function generateHistory(now: number): Transaction[] {
   const out: Transaction[] = []
-  const now = Date.now()
   // pseudo-random but deterministic
   let seed = 1337
   const rand = () => {
@@ -177,13 +208,24 @@ function generateHistory(): Transaction[] {
   return out
 }
 
-export const SEED_TRANSACTIONS: Transaction[] = [
-  ...MOCK_TRANSACTIONS,
-  ...generateHistory(),
-]
+export function createSeedTransactions(baseDate = new Date()): Transaction[] {
+  const now = baseDate.getTime()
+  return [
+    ...createMockTransactions(now),
+    ...generateHistory(now),
+  ]
+}
+
+export const MOCK_TRANSACTIONS: Transaction[] = createMockTransactions(Date.now())
+export const SEED_TRANSACTIONS: Transaction[] = createSeedTransactions()
 
 export function generateId(): string {
-  return `txn-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+  const random =
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID().slice(0, 8)
+      : Math.random().toString(36).slice(2, 10)
+
+  return `txn-${Date.now()}-${random}`
 }
 
 // ── Simulate Supabase async mutation ────────────────────────────────────────

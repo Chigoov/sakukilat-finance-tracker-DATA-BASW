@@ -76,6 +76,7 @@ function hashIndex(id: string, mod: number): number {
 }
 
 export function registerCustomCategories(cats: { id: string; label: string }[]) {
+  customCategoryRegistry.clear()
   for (const c of cats) {
     if (CATEGORY_CONFIG[c.id as Category]) continue
     const palette = CUSTOM_PALETTE[hashIndex(c.id, CUSTOM_PALETTE.length)]
@@ -84,6 +85,7 @@ export function registerCustomCategories(cats: { id: string; label: string }[]) 
 }
 
 export function registerCustomPayments(pms: { id: string; label: string }[]) {
+  customPaymentRegistry.clear()
   for (const p of pms) customPaymentRegistry.set(p.id, p.label)
 }
 

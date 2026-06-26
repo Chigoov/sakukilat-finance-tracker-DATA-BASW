@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { Zap, Loader2, ShieldCheck, Sparkles } from 'lucide-react'
-import { useStore } from '@/lib/store'
+import { useAuthStore } from '@/lib/store'
 import { cn } from '@/lib/utils'
 
 function GoogleGlyph({ className }: { className?: string }) {
@@ -17,7 +17,7 @@ function GoogleGlyph({ className }: { className?: string }) {
 }
 
 export function AuthGate() {
-  const { signInWithGoogle } = useStore()
+  const { signInWithGoogle } = useAuthStore()
   const [loading, setLoading] = useState(false)
 
   const handleSignIn = async () => {

@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Image from 'next/image'
 import { Eye, EyeOff, Sunrise, Sun, Sunset, Moon } from 'lucide-react'
-import { useStore } from '@/lib/store'
+import { useAuthStore, usePreferenceStore } from '@/lib/store'
 import { cn } from '@/lib/utils'
 
 interface Greeting {
@@ -20,7 +20,8 @@ function getGreeting(hour: number): Greeting {
 }
 
 export function GreetingHeader() {
-  const { user, zenMode, toggleZen } = useStore()
+  const { user } = useAuthStore()
+  const { zenMode, toggleZen } = usePreferenceStore()
   // Resolve greeting on the client to honor the user's actual system clock
   const [hour, setHour] = useState<number | null>(null)
 
