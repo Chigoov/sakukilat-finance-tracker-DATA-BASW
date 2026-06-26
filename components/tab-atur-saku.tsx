@@ -416,7 +416,7 @@ export function TabAturSaku() {
   return (
     <div className="flex flex-col min-h-full md:ml-[72px]">
       {/* Header */}
-      <div className="sticky top-0 z-20 bg-[#0B0F19]/90 backdrop-blur-xl border-b border-[var(--sk-border)] px-4 md:px-8 py-4">
+      <div className="sticky top-0 z-20 bg-[var(--sk-bg)] backdrop-blur-xl border-b border-[var(--sk-border)] px-4 md:px-8 py-4">
         <h2 className="text-base font-semibold text-[var(--sk-text)]">Atur Saku</h2>
         <p className="text-xs text-[var(--sk-text-dim)] mt-0.5">
           Ajarkan SakuKilat slang kamu — parser akan langsung mengenalinya.

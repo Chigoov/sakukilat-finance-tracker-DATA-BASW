@@ -107,6 +107,59 @@
   --chart-5: #A78BFA;
 }
 
+html[data-theme="light"] {
+  color-scheme: light;
+
+  --sk-bg:          #F5F7FB;
+  --sk-surface:     #FFFFFF;
+  --sk-surface-2:   #EEF2F7;
+  --sk-surface-3:   #E2E8F0;
+  --sk-border:      rgba(15,23,42,0.09);
+  --sk-border-2:    rgba(15,23,42,0.16);
+
+  --sk-text:        #121826;
+  --sk-text-muted:  #4B5D78;
+  --sk-text-dim:    #7C8BA3;
+
+  --sk-cyan:        #0284C7;
+  --sk-cyan-dim:    rgba(2, 132, 199, 0.11);
+  --sk-cyan-glow:   rgba(2, 132, 199, 0.18);
+
+  --sk-green:       #059669;
+  --sk-green-dim:   rgba(5, 150, 105, 0.11);
+  --sk-red:         #DC2626;
+  --sk-red-dim:     rgba(220, 38, 38, 0.10);
+  --sk-amber:       #B45309;
+  --sk-amber-dim:   rgba(180, 83, 9, 0.11);
+
+  --background:     var(--sk-bg);
+  --foreground:     var(--sk-text);
+  --card:           var(--sk-surface);
+  --card-foreground:var(--sk-text);
+  --popover:        var(--sk-surface-2);
+  --popover-foreground: var(--sk-text);
+  --primary:        var(--sk-cyan);
+  --primary-foreground: #FFFFFF;
+  --secondary:      var(--sk-surface-2);
+  --secondary-foreground: var(--sk-text-muted);
+  --muted:          var(--sk-surface);
+  --muted-foreground: var(--sk-text-muted);
+  --accent:         var(--sk-surface-2);
+  --accent-foreground: var(--sk-text);
+  --destructive:    var(--sk-red);
+  --border:         var(--sk-border);
+  --input:          var(--sk-surface-2);
+  --ring:           var(--sk-cyan);
+  --sidebar: var(--sk-surface);
+  --sidebar-foreground: var(--sk-text);
+  --sidebar-primary: var(--sk-cyan);
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: var(--sk-surface-2);
+  --sidebar-accent-foreground: var(--sk-text);
+  --sidebar-border: var(--sk-border);
+  --sidebar-ring: var(--sk-cyan);
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -117,7 +170,7 @@
   }
   html {
     @apply font-sans;
-    background-color: #090D16;
+    background-color: var(--sk-bg);
   }
 }
 
@@ -207,7 +260,7 @@
 
 /* ── Glass surface utility ── */
 .sk-glass {
-  background: rgba(20, 25, 40, 0.85);
+  background: color-mix(in srgb, var(--sk-surface) 86%, transparent);
   backdrop-filter: blur(16px) saturate(180%);
   -webkit-backdrop-filter: blur(16px) saturate(180%);
   border: 1px solid var(--sk-border-2);

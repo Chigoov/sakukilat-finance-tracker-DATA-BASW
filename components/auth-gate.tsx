@@ -16,21 +16,49 @@ function GoogleGlyph({ className }: { className?: string }) {
   )
 }
 
+function getAuthErrorMessage(error: unknown): string {
+  const code = typeof error === 'object' && error !== null && 'code' in error
+    ? String((error as { code?: unknown }).code)
+    : ''
+
+  if (code.includes('unauthorized-domain')) {
+    return 'Domain Netlify belum diizinkan di Firebase Auth.'
+  }
+
+  if (code.includes('popup-blocked')) {
+    return 'Popup Google diblokir browser. Izinkan popup lalu coba lagi.'
+  }
+
+  if (code.includes('popup-closed-by-user') || code.includes('cancelled-popup-request')) {
+    return 'Popup Google tertutup sebelum login selesai.'
+  }
+
+  if (code.includes('operation-not-allowed')) {
+    return 'Provider Google belum aktif di Firebase Authentication.'
+  }
+
+  return 'Login Google gagal. Coba lagi sebentar.'
+}
+
 export function AuthGate() {
   const { signInWithGoogle } = useAuthStore()
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const handleSignIn = async () => {
     setLoading(true)
+    setError(null)
     try {
       await signInWithGoogle()
+    } catch (err) {
+      setError(getAuthErrorMessage(err))
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <main className="relative min-h-[100dvh] bg-[#090D16] flex flex-col items-center justify-center px-6 overflow-hidden">
+    <main className="relative min-h-[100dvh] bg-[var(--sk-bg)] flex flex-col items-center justify-center px-6 overflow-hidden">
       {/* Ambient glow */}
       <div
         aria-hidden
@@ -75,6 +103,20 @@ export function AuthGate() {
             </>
           )}
         </button>
+
+        {error && (
+          <div
+            role="alert"
+            className="mt-4 w-full rounded-xl border border-[rgba(248,113,113,0.28)] bg-[var(--sk-red-dim)] px-4 py-3 text-left"
+          >
+            <p className="text-xs font-semibold text-[var(--sk-red)]">{error}</p>
+            {error.includes('Domain Netlify') && (
+              <p className="mt-1 text-[11px] leading-relaxed text-[var(--sk-text-muted)]">
+                Tambahkan kelolauangku.netlify.app di Firebase Authentication - Settings - Authorized domains.
+              </p>
+            )}
+          </div>
+        )}
 
         {/* Trust row */}
         <div className="mt-6 flex items-center gap-2 text-xs text-[var(--sk-text-dim)]">

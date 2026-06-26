@@ -2,10 +2,10 @@
 
 import { useState } from 'react'
 import {
-  Download, LogOut, Shield, Moon, ChevronRight, Zap, Check,
+  Download, LogOut, Shield, Moon, Sun, Monitor, ChevronRight, Zap, Check, Save,
 } from 'lucide-react'
 import Image from 'next/image'
-import { useAuthStore, usePreferenceStore, useTransactionData } from '@/lib/store'
+import { useAuthStore, usePreferenceStore, useTransactionData, type ThemeMode } from '@/lib/store'
 import { PersonalizationSettings } from '@/components/personalization-settings'
 import type { Transaction } from '@/lib/mock-data'
 import { monthlyTotals } from '@/lib/stats'
@@ -89,11 +89,12 @@ function SettingRow({
 
 // ── Main tab ──────────────────────────────────────────────────────────────────
 export function TabProfil() {
-  const { user, signOut } = useAuthStore()
+  const { user, signOut, updateProfile } = useAuthStore()
   const { transactions } = useTransactionData()
-  const { zenMode, toggleZen } = usePreferenceStore()
+  const { zenMode, themeMode, toggleZen, setThemeMode } = usePreferenceStore()
   const [exported, setExported] = useState(false)
   const [confirmLogout, setConfirmLogout] = useState(false)
+  const [profileNameDraft, setProfileNameDraft] = useState(user?.name ?? '')
 
   const { income, expense, balance } = monthlyTotals(transactions)
 
@@ -112,12 +113,16 @@ export function TabProfil() {
     signOut()
   }
 
+  const handleSaveProfile = () => {
+    updateProfile(profileNameDraft)
+  }
+
   if (!user) return null
 
   return (
     <div className="flex flex-col min-h-full md:ml-[72px]">
       {/* Header */}
-      <div className="sticky top-0 z-20 bg-[#0B0F19]/90 backdrop-blur-xl border-b border-[var(--sk-border)] px-4 md:px-8 py-4">
+      <div className="sticky top-0 z-20 bg-[var(--sk-bg)] backdrop-blur-xl border-b border-[var(--sk-border)] px-4 md:px-8 py-4">
         <h2 className="text-base font-semibold text-[var(--sk-text)]">Profil</h2>
       </div>
 
@@ -155,6 +160,33 @@ export function TabProfil() {
         {/* ── Monthly stats ── */}
         <div>
           <p className="text-xs text-[var(--sk-text-dim)] uppercase tracking-widest font-medium mb-2.5">
+            Edit profil
+          </p>
+          <div className="rounded-xl bg-[var(--sk-surface)] border border-[var(--sk-border)] p-3 flex items-center gap-2">
+            <input
+              value={profileNameDraft}
+              onChange={e => setProfileNameDraft(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleSaveProfile()}
+              placeholder="Nama panggilan"
+              className="flex-1 min-w-0 bg-[var(--sk-surface-2)] border border-[var(--sk-border)] rounded-lg px-3 py-2 text-sm text-[var(--sk-text)] placeholder:text-[var(--sk-text-dim)] outline-none focus:border-[var(--sk-cyan)]"
+            />
+            <button
+              type="button"
+              onClick={handleSaveProfile}
+              disabled={!profileNameDraft.trim()}
+              className="w-9 h-9 rounded-lg bg-[var(--sk-cyan)] text-[#090D16] disabled:bg-[var(--sk-surface-2)] disabled:text-[var(--sk-text-dim)] flex items-center justify-center"
+              aria-label="Simpan profil"
+            >
+              <Save className="w-4 h-4" />
+            </button>
+          </div>
+          <p className="text-[11px] text-[var(--sk-text-dim)] mt-2">
+            Nama ini hanya dipakai di SakuKilat, bukan mengubah akun Google.
+          </p>
+        </div>
+
+        <div>
+          <p className="text-xs text-[var(--sk-text-dim)] uppercase tracking-widest font-medium mb-2.5">
             Bulan ini
           </p>
           <div className="flex gap-2.5">
@@ -174,6 +206,39 @@ export function TabProfil() {
             Preferensi
           </p>
           <div className="flex flex-col gap-2">
+            <div className="w-full rounded-xl border border-[var(--sk-border)] bg-[var(--sk-surface)] px-4 py-3.5">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-8 h-8 rounded-lg bg-[var(--sk-surface-2)] flex items-center justify-center flex-shrink-0">
+                  <Sun className="w-4 h-4 text-[var(--sk-text-muted)]" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-[var(--sk-text)] leading-tight">Tampilan</p>
+                  <p className="text-xs text-[var(--sk-text-dim)] mt-0.5">Pilih mode yang paling nyaman di mata</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-1.5">
+                {([
+                  ['system', Monitor, 'System'],
+                  ['dark', Moon, 'Dark'],
+                  ['light', Sun, 'Light'],
+                ] as Array<[ThemeMode, React.ComponentType<{ className?: string }>, string]>).map(([mode, Icon, label]) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setThemeMode(mode)}
+                    className={cn(
+                      'h-9 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 border transition-colors',
+                      themeMode === mode
+                        ? 'bg-[var(--sk-cyan)] border-[var(--sk-cyan)] text-[#090D16]'
+                        : 'bg-[var(--sk-surface-2)] border-[var(--sk-border)] text-[var(--sk-text-muted)]'
+                    )}
+                  >
+                    <Icon className="w-3.5 h-3.5" />
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
             <SettingRow
               icon={Moon}
               label="Zen Mode"
@@ -202,6 +267,18 @@ export function TabProfil() {
             Data
           </p>
           <div className="flex flex-col gap-2">
+            <div className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl border bg-[var(--sk-surface)] border-[var(--sk-border)]">
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 bg-[var(--sk-surface-2)]">
+                <Save className="w-4 h-4 text-[var(--sk-text-muted)]" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium leading-tight text-[var(--sk-text)]">Auto-save aktif</p>
+                <p className="text-xs text-[var(--sk-text-dim)] mt-0.5 leading-relaxed">
+                  Transaksi, saku, budget, profil, dan tema tersimpan otomatis di browser ini.
+                </p>
+              </div>
+              <Check className="w-4 h-4 text-[var(--sk-green)] flex-shrink-0" />
+            </div>
             <SettingRow
               icon={exported ? Check : Download}
               label={exported ? 'File berhasil diunduh!' : 'Ekspor Data ke JSON'}

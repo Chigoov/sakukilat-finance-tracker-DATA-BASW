@@ -129,6 +129,15 @@ export const TabBeranda = memo(function TabBeranda() {
     () => slices.length > 0 ? slices : [{ category: 'empty', total: 1, pct: 1 }],
     [slices]
   )
+  const chartDetailSlices = useMemo(() => slices.slice(0, 4), [slices])
+  const otherChartSlice = useMemo(() => {
+    const rest = slices.slice(4)
+    if (rest.length === 0) return null
+    return {
+      total: rest.reduce((sum, slice) => sum + slice.total, 0),
+      pct: rest.reduce((sum, slice) => sum + slice.pct, 0),
+    }
+  }, [slices])
 
   const recentTransactions = useMemo(() =>
     [...transactions].sort((a, b) => b.date.getTime() - a.date.getTime()).slice(0, 7),
@@ -148,14 +157,12 @@ export const TabBeranda = memo(function TabBeranda() {
 
   const savingsRate = income > 0 ? Math.round(((income - expense) / income) * 100) : 0
   const isEmpty = slices.length === 0
-  const topSlice = slices[0] ?? null
-  const topCategory = topSlice ? getCategoryConfig(topSlice.category) : null
 
   return (
     <div className="flex flex-col min-h-full md:ml-[72px]">
 
       {/* ── Desktop top bar ── */}
-      <div className="hidden md:flex sticky top-0 z-30 bg-[#0B0F19]/80 backdrop-blur-xl border-b border-[var(--sk-border)] px-8 py-4 items-center justify-between">
+      <div className="hidden md:flex sticky top-0 z-30 bg-[var(--sk-bg)] backdrop-blur-xl border-b border-[var(--sk-border)] px-8 py-4 items-center justify-between">
         <div>
           <p className="text-xs text-[var(--sk-text-dim)] mb-0.5">{fullDate}</p>
           <h1 className="text-base font-semibold text-[var(--sk-text)]">
@@ -278,86 +285,96 @@ export const TabBeranda = memo(function TabBeranda() {
             </div>
 
             {/* Right: Donut chart */}
-            <div className={cn('w-32 md:w-36 flex-shrink-0 relative flex flex-col items-center', zenMode && 'sk-zen-blur')}>
+            <div className={cn('w-full sm:w-[360px] md:w-[420px] flex-shrink-0 relative', zenMode && 'sk-zen-blur')}>
               {isEmpty ? (
-                <div className="w-28 h-28 md:w-32 md:h-32 rounded-full border-4 border-dashed border-[var(--sk-border-2)] flex items-center justify-center">
+                <div className="ml-auto w-36 h-36 md:w-40 md:h-40 rounded-full border-4 border-dashed border-[var(--sk-border-2)] flex items-center justify-center">
                   <span className="text-[10px] text-[var(--sk-text-dim)] text-center leading-tight">Belum<br/>ada data</span>
                 </div>
               ) : (
-                <>
-                <div className="w-28 h-28 md:w-32 md:h-32">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={chartData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius="52%"
-                      outerRadius="78%"
-                      paddingAngle={2}
-                      dataKey="total"
-                      labelLine={false}
-                    >
-                      {chartData.map((entry, index) => (
-                        <Cell
-                          key={`cell-${index}`}
-                          fill={entry.category === 'empty' ? 'var(--sk-surface-3)' : getCategoryHex(entry.category)}
-                          strokeWidth={0}
-                        />
-                      ))}
-                    </Pie>
-                    <text
-                      x="50%" y="43%"
-                      textAnchor="middle"
-                      fill="var(--sk-text-dim)"
-                      fontSize={9}
-                      fontFamily="var(--font-sans)"
-                      letterSpacing="0.05em"
-                    >
-                      TOP
-                    </text>
-                    <text
-                      x="50%" y="61%"
-                      textAnchor="middle"
-                      fill="var(--sk-text)"
-                      fontSize={18}
-                      fontWeight="700"
-                      fontFamily="var(--font-sans)"
-                    >
-                      {topSlice ? `${Math.round(topSlice.pct * 100)}%` : '0%'}
-                    </text>
-                  </PieChart>
-                </ResponsiveContainer>
-                </div>
-                {topSlice && topCategory && (
-                  <div className="mt-1 text-center max-w-full">
-                    <p className="text-[11px] font-medium text-[var(--sk-text-muted)] truncate">
-                      {topCategory.label}
-                    </p>
-                    <p className="text-[11px] font-bold tabular-nums text-[var(--sk-red)]">
-                      {formatIDRCompact(topSlice.total)}
-                    </p>
+                <div className="grid grid-cols-[136px_minmax(0,1fr)] md:grid-cols-[160px_minmax(0,1fr)] gap-3 items-center">
+                  <div className="w-36 h-36 md:w-40 md:h-40">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={chartData}
+                          cx="50%"
+                          cy="50%"
+                          outerRadius="82%"
+                          paddingAngle={2}
+                          dataKey="total"
+                          labelLine={false}
+                        >
+                          {chartData.map((entry, index) => (
+                            <Cell
+                              key={`cell-${index}`}
+                              fill={entry.category === 'empty' ? 'var(--sk-surface-3)' : getCategoryHex(entry.category)}
+                              stroke="var(--sk-surface)"
+                              strokeWidth={2}
+                            />
+                          ))}
+                        </Pie>
+                      </PieChart>
+                    </ResponsiveContainer>
                   </div>
-                )}
-                </>
+
+                  <div className="min-w-0 rounded-2xl bg-[var(--sk-surface-2)] border border-[var(--sk-border)] p-3">
+                    <div className="flex items-baseline justify-between gap-2 mb-2">
+                      <p className="text-[10px] uppercase tracking-widest text-[var(--sk-text-dim)]">Alokasi keluar</p>
+                      <p className="text-[10px] font-semibold tabular-nums text-[var(--sk-red)]">{formatIDRCompact(expense)}</p>
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      {chartDetailSlices.map(slice => {
+                        const conf = getCategoryConfig(slice.category)
+                        return (
+                          <div key={slice.category} className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2">
+                            <span
+                              className="w-2.5 h-2.5 rounded-full"
+                              style={{ background: getCategoryHex(slice.category) }}
+                            />
+                            <span className="truncate text-[11px] font-medium text-[var(--sk-text-muted)]">{conf.label}</span>
+                            <span className="text-[11px] font-bold tabular-nums text-[var(--sk-text)]">
+                              {Math.round(slice.pct * 100)}%
+                            </span>
+                          </div>
+                        )
+                      })}
+                      {otherChartSlice && (
+                        <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2">
+                          <span className="w-2.5 h-2.5 rounded-full bg-[var(--sk-text-dim)]" />
+                          <span className="truncate text-[11px] font-medium text-[var(--sk-text-muted)]">Lainnya</span>
+                          <span className="text-[11px] font-bold tabular-nums text-[var(--sk-text)]">
+                            {Math.round(otherChartSlice.pct * 100)}%
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
               )}
             </div>
           </div>
 
           {/* Category legend */}
           {slices.length > 0 && (
-            <div className={cn('mt-4 pt-3.5 border-t border-[var(--sk-border)] flex flex-wrap gap-x-3 gap-y-1.5', zenMode && 'sk-zen-blur')}>
-              {slices.slice(0, 5).map(s => {
+            <div className={cn('mt-4 pt-3.5 border-t border-[var(--sk-border)] grid gap-2 sm:grid-cols-2', zenMode && 'sk-zen-blur')}>
+              {slices.slice(0, 6).map(s => {
                 const conf = getCategoryConfig(s.category)
                 return (
-                  <div key={s.category} className="flex items-center gap-1.5">
+                  <div
+                    key={s.category}
+                    className="flex items-center gap-2 rounded-xl bg-[var(--sk-surface-2)] border border-[var(--sk-border)] px-2.5 py-2"
+                  >
                     <span
-                      className="w-2 h-2 rounded-full flex-shrink-0"
+                      className="w-10 shrink-0 rounded-lg px-1.5 py-0.5 text-center text-[11px] font-bold tabular-nums text-[#090D16]"
                       style={{ background: getCategoryHex(s.category) }}
-                    />
-                    <span className="text-[11px] text-[var(--sk-text-muted)]">{conf.label}</span>
-                    <span className="text-[11px] font-semibold tabular-nums text-[var(--sk-text-dim)]">
+                    >
                       {Math.round(s.pct * 100)}%
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-[11px] font-semibold uppercase tracking-wide text-[var(--sk-text-muted)]">
+                      {conf.label}
+                    </span>
+                    <span className="text-[11px] font-bold tabular-nums text-[var(--sk-text)]">
+                      {formatIDRCompact(s.total)}
                     </span>
                   </div>
                 )
@@ -374,7 +391,7 @@ export const TabBeranda = memo(function TabBeranda() {
       </div>
 
       <section className="flex-1 md:px-8">
-        <div className="sticky top-0 z-20 bg-[#0B0F19]/90 backdrop-blur-xl px-4 md:px-0 py-3 border-b border-[var(--sk-border)]">
+        <div className="sticky top-0 z-20 bg-[var(--sk-bg)] backdrop-blur-xl px-4 md:px-0 py-3 border-b border-[var(--sk-border)]">
           <FilterTabs active={activeFilter} onChange={setActiveFilter} counts={filterCounts} />
         </div>
         <div className="pt-3 pb-4">

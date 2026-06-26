@@ -543,6 +543,15 @@ function detectCategory(text: string, type: TransactionType, extras?: ParserExtr
     }
   }
 
+  if (type === 'income') {
+    for (const category of ['gaji', 'investasi'] as Category[]) {
+      for (const kw of CATEGORY_KEYWORDS[category]) {
+        if (wordMatch(lower, kw)) return category
+      }
+    }
+    return 'gaji'
+  }
+
   for (const [category, keywords] of Object.entries(CATEGORY_KEYWORDS) as [Category, string[]][]) {
     if (category === 'lainnya') continue
     for (const kw of keywords) {
@@ -550,7 +559,6 @@ function detectCategory(text: string, type: TransactionType, extras?: ParserExtr
     }
   }
 
-  if (type === 'income') return 'gaji'
   return 'lainnya'
 }
 
@@ -569,18 +577,24 @@ export function parseTransaction(input: string, extras?: ParserExtras): ParsedTr
   if (!trimmed) return null
 
   const tokens = trimmed.split(/\s+/)
+  const type = detectType(trimmed)
 
   // ── Step 1: Find the LAST amount token ──────────────────────────────────
   // Scanning from the end is more robust: in "ongkir grab 38k ovo",
   // the amount always comes just before the payment method.
   const trailingAmount = findTrailingAmount(tokens, extras)
-  if (!trailingAmount) return null
+  const parsedAmount = trailingAmount ?? (type === 'income' ? findAnyAmount(tokens) : null)
+  if (!parsedAmount) return null
 
-  const { amount, indexes: amountIndexes } = trailingAmount
+  const { amount, indexes: amountIndexes } = parsedAmount
   const paymentTokens = tokens.filter(token => isPaymentToken(token, extras))
 
   // ── Step 2: Detect payment method ───────────────────────────────────────
-  let paymentMethod = paymentTokens.length > 0 ? detectPaymentMethod(tokens, extras) : 'tunai'
+  let paymentMethod = paymentTokens.length > 0
+    ? detectPaymentMethod(tokens, extras)
+    : type === 'income'
+      ? extras?.lastActiveWalletId ?? 'bca'
+      : 'tunai'
 
   // ── Step 3: Build description ────────────────────────────────────────────
   // Include only tokens that are:
@@ -592,13 +606,13 @@ export function parseTransaction(input: string, extras?: ParserExtras): ParsedTr
     if (amountIndexes.has(i)) return false
     if (isCurrencyToken(t)) return false
     if (isPaymentToken(t, extras)) return false
+    if (type === 'income' && INCOME_KEYWORDS.includes(normalizeToken(t))) return false
     return true
   })
 
-  const description = descTokens.join(' ').trim() || 'Transaksi'
+  const description = descTokens.join(' ').trim() || (type === 'income' ? 'Pemasukan' : 'Transaksi')
 
   // ── Step 4: Classify ─────────────────────────────────────────────────────
-  const type     = detectType(trimmed)
   if (type === 'income' && paymentMethod === 'transfer') {
     paymentMethod = extras?.lastActiveWalletId ?? 'bca'
   }

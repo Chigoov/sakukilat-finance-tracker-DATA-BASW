@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useRef, useEffect, useCallback } from 'react'
-import { ArrowRightLeft, PiggyBank, SendHorizonal, Sparkles, X, Loader2 } from 'lucide-react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { ArrowRightLeft, PiggyBank, SendHorizonal, Sparkles, X, Loader2, TrendingDown, TrendingUp } from 'lucide-react'
 import { parseEntry, formatIDR, type ParserExtras } from '@/lib/parser'
 import { cn } from '@/lib/utils'
 import { getCategoryConfig, getPaymentLabel } from './category-badge'
@@ -31,6 +31,22 @@ const EXAMPLE_HINTS = [
   'grab 18k dana',
 ]
 
+const INCOME_HINTS = [
+  '100000 shopee',
+  'gaji 5jt bca',
+  'bonus 500k gopay',
+  'jual barang 250rb',
+  'cashback 25k dana',
+]
+
+const EXPENSE_HINTS = [
+  'makan soto 25k gopay',
+  'bensin 50rb tunai',
+  'kopi 18.500 ovo',
+  'belanja 299rb shopeepay',
+  'listrik 200rb bca',
+]
+
 interface SmartInputProps {
   onSubmit: (input: string) => boolean | void | Promise<boolean | void>
   isSubmitting?: boolean
@@ -39,22 +55,32 @@ interface SmartInputProps {
   autoFocus?: boolean
 }
 
+type InputMode = 'auto' | 'expense' | 'income'
+
 export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, autoFocus }: SmartInputProps) {
   const [value, setValue] = useState('')
   const [preview, setPreview] = useState<ParsePreview | null>(null)
   const [focused, setFocused] = useState(false)
   const [hintIndex, setHintIndex] = useState(0)
   const [localSubmitting, setLocalSubmitting] = useState(false)
+  const [mode, setMode] = useState<InputMode>('auto')
   const inputRef = useRef<HTMLInputElement>(null)
   const locked = Boolean(isSubmitting || localSubmitting)
+  const effectiveValue = mode === 'income' && value.trim() ? `masuk ${value}` : value
+  const activeHints = useMemo(() => {
+    if (mode === 'income') return INCOME_HINTS
+    if (mode === 'expense') return EXPENSE_HINTS
+    return EXAMPLE_HINTS
+  }, [mode])
+  const placeholderHint = activeHints[hintIndex % activeHints.length]
 
   // Cycle through example hints
   useEffect(() => {
     const interval = setInterval(() => {
-      setHintIndex(i => (i + 1) % EXAMPLE_HINTS.length)
+      setHintIndex(i => (i + 1) % activeHints.length)
     }, 3000)
     return () => clearInterval(interval)
-  }, [])
+  }, [activeHints.length])
 
   // Optional autofocus (desktop top bar)
   useEffect(() => {
@@ -67,7 +93,7 @@ export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, au
       setPreview(null)
       return
     }
-    const parsed = parseEntry(value, parserExtras)
+    const parsed = parseEntry(effectiveValue, parserExtras)
     if (parsed && parsed.amount > 0) {
       if (parsed.kind === 'transfer' || parsed.kind === 'saving') {
         setPreview({
@@ -94,7 +120,7 @@ export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, au
     } else {
       setPreview(null)
     }
-  }, [value, parserExtras])
+  }, [value, effectiveValue, parserExtras])
 
   const handleSubmit = useCallback(async () => {
     const trimmed = value.trim()
@@ -102,7 +128,7 @@ export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, au
 
     setLocalSubmitting(true)
     try {
-      const ok = await Promise.resolve(onSubmit(trimmed))
+      const ok = await Promise.resolve(onSubmit(mode === 'income' ? `masuk ${trimmed}` : trimmed))
       if (ok !== false) {
         setValue('')
         setPreview(null)
@@ -111,7 +137,7 @@ export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, au
       setLocalSubmitting(false)
       requestAnimationFrame(() => inputRef.current?.focus())
     }
-  }, [value, locked, onSubmit])
+  }, [value, locked, mode, onSubmit])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -131,6 +157,33 @@ export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, au
 
   return (
     <div className={cn('w-full', className)}>
+      <div className="mb-2 grid grid-cols-3 gap-1.5 px-1">
+        {([
+          ['auto', Sparkles, 'Auto'],
+          ['expense', TrendingDown, 'Keluar'],
+          ['income', TrendingUp, 'Masuk'],
+        ] as Array<[InputMode, React.ComponentType<{ className?: string }>, string]>).map(([itemMode, Icon, label]) => (
+          <button
+            key={itemMode}
+            type="button"
+            onClick={() => setMode(itemMode)}
+            className={cn(
+              'h-8 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-1.5 border transition-colors',
+              mode === itemMode
+                ? itemMode === 'income'
+                  ? 'bg-[var(--sk-green)] border-[var(--sk-green)] text-[#090D16]'
+                  : itemMode === 'expense'
+                  ? 'bg-[var(--sk-red)] border-[var(--sk-red)] text-[#090D16]'
+                  : 'bg-[var(--sk-cyan)] border-[var(--sk-cyan)] text-[#090D16]'
+                : 'bg-[var(--sk-surface-2)] border-[var(--sk-border)] text-[var(--sk-text-muted)]'
+            )}
+          >
+            <Icon className="w-3.5 h-3.5" />
+            {label}
+          </button>
+        ))}
+      </div>
+
       {/* Parse preview pill */}
       {preview && focused && (
         <div className="animate-slide-up mb-2 px-1">
@@ -213,7 +266,7 @@ export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, au
           disabled={locked}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
-          placeholder={`cth. "${EXAMPLE_HINTS[hintIndex]}"`}
+          placeholder={`cth. "${placeholderHint}"`}
           autoComplete="off"
           autoCorrect="off"
           autoCapitalize="off"
@@ -248,7 +301,9 @@ export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, au
           className={cn(
             'flex-shrink-0 w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-200',
             value.trim() && !locked
-              ? 'bg-[var(--sk-cyan)] text-[#0B0F19] shadow-[0_0_12px_var(--sk-cyan-glow)] hover:opacity-90 active:scale-95'
+              ? mode === 'income'
+                ? 'bg-[var(--sk-green)] text-[#0B0F19] shadow-[0_0_12px_rgba(52,211,153,0.24)] hover:opacity-90 active:scale-95'
+                : 'bg-[var(--sk-cyan)] text-[#0B0F19] shadow-[0_0_12px_var(--sk-cyan-glow)] hover:opacity-90 active:scale-95'
               : 'bg-[var(--sk-surface-3)] text-[var(--sk-text-dim)]'
           )}
         >

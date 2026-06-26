@@ -37,7 +37,7 @@ function AppShell() {
   // Loading splash
   if (!authReady) {
     return (
-      <div className="min-h-[100dvh] bg-[#090D16] flex items-center justify-center">
+      <div className="min-h-[100dvh] bg-[var(--sk-bg)] flex items-center justify-center">
         <div className="w-10 h-10 rounded-2xl bg-[var(--sk-cyan)] animate-pulse-soft flex items-center justify-center shadow-[0_0_30px_var(--sk-cyan-glow)]">
           <svg viewBox="0 0 24 24" className="w-5 h-5 fill-[#090D16]" aria-hidden>
             <path d="M13 3L4 14h7l-1 7 9-11h-7l1-7z" />

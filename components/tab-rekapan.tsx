@@ -4,6 +4,7 @@ import { memo, useState, useMemo } from 'react'
 import {
   BarChart, Bar, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
+  PieChart, Pie, Cell,
 } from 'recharts'
 import { ChevronLeft, ChevronRight, Search, X } from 'lucide-react'
 import { useTransactionActions, useTransactionData } from '@/lib/store'
@@ -290,20 +291,22 @@ function AllocationRows({ slices, tone }: { slices: ReturnType<typeof categoryBr
 
   return (
     <div className="flex flex-col gap-2">
-      {slices.slice(0, 5).map(slice => {
+      {slices.map(slice => {
         const conf = getCategoryConfig(slice.category)
         return (
-          <div key={slice.category} className="flex items-center gap-2">
+          <div
+            key={slice.category}
+            className="flex items-center gap-3 border-b border-[var(--sk-border)] py-2.5 last:border-b-0"
+          >
             <span
-              className="w-2 h-2 rounded-full flex-shrink-0"
+              className="w-11 shrink-0 rounded-lg px-2 py-1 text-center text-[11px] font-bold tabular-nums text-[#090D16]"
               style={{ background: getCategoryHex(slice.category) }}
-            />
-            <span className="text-xs text-[var(--sk-text-muted)] truncate">{conf.label}</span>
-            <span className="ml-auto text-xs font-semibold tabular-nums text-[var(--sk-text)]">
-              {formatIDRCompact(slice.total)}
-            </span>
-            <span className="w-9 text-right text-[10px] tabular-nums text-[var(--sk-text-dim)]">
+            >
               {Math.round(slice.pct * 100)}%
+            </span>
+            <span className="text-sm font-semibold uppercase tracking-wide text-[var(--sk-text)] truncate">{conf.label}</span>
+            <span className="ml-auto text-sm font-semibold tabular-nums text-[var(--sk-text)]">
+              {formatIDRCompact(slice.total)}
             </span>
           </div>
         )
@@ -315,6 +318,7 @@ function AllocationRows({ slices, tone }: { slices: ReturnType<typeof categoryBr
 function MonthlyAllocationCard() {
   const { transactions } = useTransactionData()
   const [monthOffset, setMonthOffset] = useState(0)
+  const [focus, setFocus] = useState<'expense' | 'income'>('expense')
 
   const monthRef = useMemo(() => {
     const now = new Date()
@@ -328,6 +332,9 @@ function MonthlyAllocationCard() {
   const totals = useMemo(() => monthlyTotals(transactions, monthRef), [transactions, monthRef])
   const expenseSlices = useMemo(() => categoryBreakdown(transactions, monthRef, 'expense'), [transactions, monthRef])
   const incomeSlices = useMemo(() => categoryBreakdown(transactions, monthRef, 'income'), [transactions, monthRef])
+  const activeSlices = focus === 'expense' ? expenseSlices : incomeSlices
+  const activeTotal = focus === 'expense' ? totals.expense : totals.income
+  const emptyLabel = focus === 'expense' ? 'Belum ada pengeluaran' : 'Belum ada pemasukan'
 
   return (
     <div className="rounded-2xl bg-[var(--sk-surface)] border border-[var(--sk-border)] p-4 mb-5">
@@ -353,38 +360,79 @@ function MonthlyAllocationCard() {
         </button>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 mb-4">
-        <div className="rounded-xl bg-[var(--sk-surface-2)] border border-[var(--sk-border)] p-3">
-          <p className="text-[10px] text-[var(--sk-text-dim)] uppercase tracking-widest mb-1">Keluar</p>
-          <p className="text-base font-bold tabular-nums text-[var(--sk-red)]">{formatIDRCompact(totals.expense)}</p>
-        </div>
-        <div className="rounded-xl bg-[var(--sk-surface-2)] border border-[var(--sk-border)] p-3">
-          <p className="text-[10px] text-[var(--sk-text-dim)] uppercase tracking-widest mb-1">Masuk</p>
+      <div className="grid grid-cols-2 gap-3 mb-5">
+        <button
+          type="button"
+          onClick={() => setFocus('income')}
+          className={cn(
+            'rounded-xl bg-[var(--sk-surface-2)] border p-3 text-left transition-colors',
+            focus === 'income' ? 'border-[var(--sk-green)] shadow-[inset_0_-3px_0_var(--sk-green)]' : 'border-[var(--sk-border)]'
+          )}
+        >
+          <p className="text-[10px] text-[var(--sk-text-dim)] uppercase tracking-widest mb-1">Pendapatan</p>
           <p className="text-base font-bold tabular-nums text-[var(--sk-green)]">{formatIDRCompact(totals.income)}</p>
-        </div>
+        </button>
+        <button
+          type="button"
+          onClick={() => setFocus('expense')}
+          className={cn(
+            'rounded-xl bg-[var(--sk-surface-2)] border p-3 text-left transition-colors',
+            focus === 'expense' ? 'border-[var(--sk-red)] shadow-[inset_0_-3px_0_var(--sk-red)]' : 'border-[var(--sk-border)]'
+          )}
+        >
+          <p className="text-[10px] text-[var(--sk-text-dim)] uppercase tracking-widest mb-1">Pengeluaran</p>
+          <p className="text-base font-bold tabular-nums text-[var(--sk-red)]">{formatIDRCompact(totals.expense)}</p>
+        </button>
       </div>
 
-      <div className="grid md:grid-cols-2 gap-4">
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-xs font-medium text-[var(--sk-text-muted)]">Kemana uang keluar</p>
-            <span className="text-[10px] text-[var(--sk-text-dim)]">{expenseSlices.length} kategori</span>
-          </div>
-          <AllocationStrip slices={expenseSlices} emptyText="Belum ada pengeluaran" />
-          <div className="mt-3">
-            <AllocationRows slices={expenseSlices} tone="expense" />
-          </div>
+      <div className="grid gap-4 lg:grid-cols-[minmax(240px,0.9fr)_minmax(260px,1.1fr)] lg:items-center">
+        <div className="min-h-[260px]">
+          {activeSlices.length > 0 ? (
+            <ResponsiveContainer width="100%" height={260}>
+              <PieChart>
+                <Pie
+                  data={activeSlices}
+                  cx="50%"
+                  cy="50%"
+                  outerRadius="86%"
+                  paddingAngle={1}
+                  dataKey="total"
+                  labelLine={false}
+                >
+                  {activeSlices.map(slice => (
+                    <Cell
+                      key={slice.category}
+                      fill={getCategoryHex(slice.category)}
+                      stroke="var(--sk-surface)"
+                      strokeWidth={2}
+                    />
+                  ))}
+                </Pie>
+              </PieChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-[260px] rounded-2xl border border-dashed border-[var(--sk-border-2)] bg-[var(--sk-surface-2)] flex items-center justify-center">
+              <p className="text-xs text-[var(--sk-text-dim)]">{emptyLabel}</p>
+            </div>
+          )}
         </div>
 
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-xs font-medium text-[var(--sk-text-muted)]">Dari mana uang masuk</p>
-            <span className="text-[10px] text-[var(--sk-text-dim)]">{incomeSlices.length} kategori</span>
+        <div className="rounded-2xl bg-[var(--sk-surface-2)] border border-[var(--sk-border)] p-3">
+          <div className="flex items-center justify-between gap-3 border-b border-[var(--sk-border)] pb-3 mb-1">
+            <div>
+              <p className="text-xs font-semibold text-[var(--sk-text-muted)]">
+                {focus === 'expense' ? 'Alokasi pengeluaran' : 'Sumber pendapatan'}
+              </p>
+              <p className="text-[10px] text-[var(--sk-text-dim)]">{activeSlices.length} kategori tercatat</p>
+            </div>
+            <p className={cn(
+              'text-sm font-bold tabular-nums',
+              focus === 'expense' ? 'text-[var(--sk-red)]' : 'text-[var(--sk-green)]'
+            )}>
+              {formatIDRCompact(activeTotal)}
+            </p>
           </div>
-          <AllocationStrip slices={incomeSlices} emptyText="Belum ada pemasukan" />
-          <div className="mt-3">
-            <AllocationRows slices={incomeSlices} tone="income" />
-          </div>
+          <AllocationRows slices={activeSlices} tone={focus} />
         </div>
       </div>
     </div>
@@ -573,7 +621,7 @@ export const TabRekapan = memo(function TabRekapan() {
   return (
     <div className="flex flex-col min-h-full md:ml-[72px]">
       {/* Header */}
-      <div className="sticky top-0 z-20 bg-[#0B0F19]/90 backdrop-blur-xl border-b border-[var(--sk-border)] px-4 md:px-8 py-4">
+      <div className="sticky top-0 z-20 bg-[var(--sk-bg)] backdrop-blur-xl border-b border-[var(--sk-border)] px-4 md:px-8 py-4">
         <h2 className="text-base font-semibold text-[var(--sk-text)] mb-3">Rekapan</h2>
         {/* Toggle */}
         <div className="inline-flex bg-[var(--sk-surface)] rounded-xl p-1 border border-[var(--sk-border)]">

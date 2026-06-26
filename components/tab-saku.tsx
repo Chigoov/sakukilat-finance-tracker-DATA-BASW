@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { ArrowRightLeft, Gauge, Landmark, PiggyBank, Plus, Wallet, X } from 'lucide-react'
+import { ArrowRightLeft, Check, Gauge, Landmark, Pencil, PiggyBank, Plus, Trash2, Wallet, X } from 'lucide-react'
 import { useBudgetStore, useWalletStore } from '@/lib/store'
 import { formatIDR, formatIDRCompact } from '@/lib/parser'
 import { parseAmountInput } from '@/lib/amount'
@@ -71,11 +71,18 @@ function BudgetSettings() {
 }
 
 function WalletManager() {
-  const { wallets, totalStored, addWallet, removeWallet } = useWalletStore()
+  const { wallets, totalStored, addWallet, updateWallet, removeWallet } = useWalletStore()
   const [label, setLabel] = useState('')
   const [type, setType] = useState<WalletType>('ewallet')
   const [balance, setBalance] = useState('')
   const [keywords, setKeywords] = useState('')
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [draft, setDraft] = useState({
+    label: '',
+    type: 'ewallet' as WalletType,
+    balance: '',
+    keywords: '',
+  })
 
   const handleAdd = () => {
     const name = label.trim()
@@ -90,6 +97,27 @@ function WalletManager() {
     setLabel('')
     setBalance('')
     setKeywords('')
+  }
+
+  const startEdit = (wallet: typeof wallets[number]) => {
+    setEditingId(wallet.id)
+    setDraft({
+      label: wallet.label,
+      type: wallet.type,
+      balance: String(wallet.balance),
+      keywords: wallet.keywords.join(', '),
+    })
+  }
+
+  const handleUpdate = () => {
+    if (!editingId) return
+    updateWallet(editingId, {
+      label: draft.label,
+      type: draft.type,
+      balance: parseAmountInput(draft.balance),
+      keywords: draft.keywords.split(',').map(item => item.trim()).filter(Boolean),
+    })
+    setEditingId(null)
   }
 
   return (
@@ -162,33 +190,103 @@ function WalletManager() {
       </div>
 
       <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
-        {wallets.map(wallet => (
-          <div key={wallet.id} className="rounded-xl bg-[var(--sk-surface)] border border-[var(--sk-border)] px-3 py-2.5 flex items-center gap-2 min-w-0">
-            <div className="w-8 h-8 rounded-lg bg-[var(--sk-surface-2)] flex items-center justify-center flex-shrink-0">
-              <Landmark className="w-4 h-4 text-[var(--sk-text-muted)]" />
+        {wallets.map(wallet => {
+          const isEditing = editingId === wallet.id
+
+          return (
+            <div key={wallet.id} className="rounded-xl bg-[var(--sk-surface)] border border-[var(--sk-border)] p-3 min-w-0">
+              {isEditing ? (
+                <div className="flex flex-col gap-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      value={draft.label}
+                      onChange={e => setDraft(prev => ({ ...prev, label: e.target.value }))}
+                      className="min-w-0 bg-[var(--sk-surface-2)] rounded-lg px-3 py-2 text-xs text-[var(--sk-text)] outline-none border border-[var(--sk-border)]"
+                      placeholder="Nama saku"
+                    />
+                    <select
+                      value={draft.type}
+                      onChange={e => setDraft(prev => ({ ...prev, type: e.target.value as WalletType }))}
+                      className="bg-[var(--sk-surface-2)] rounded-lg px-3 py-2 text-xs text-[var(--sk-text)] outline-none border border-[var(--sk-border)]"
+                    >
+                      <option value="ewallet">E-wallet</option>
+                      <option value="bank">Bank</option>
+                      <option value="cash">Cash</option>
+                      <option value="savings">Simpan</option>
+                      <option value="card">Kartu</option>
+                      <option value="other">Lainnya</option>
+                    </select>
+                  </div>
+                  <input
+                    value={draft.balance}
+                    onChange={e => setDraft(prev => ({ ...prev, balance: e.target.value }))}
+                    inputMode="decimal"
+                    className="bg-[var(--sk-surface-2)] rounded-lg px-3 py-2 text-xs text-[var(--sk-text)] outline-none border border-[var(--sk-border)]"
+                    placeholder="Saldo"
+                  />
+                  <input
+                    value={draft.keywords}
+                    onChange={e => setDraft(prev => ({ ...prev, keywords: e.target.value }))}
+                    className="bg-[var(--sk-surface-2)] rounded-lg px-3 py-2 text-xs text-[var(--sk-text)] outline-none border border-[var(--sk-border)]"
+                    placeholder="Keyword, pisahkan koma"
+                  />
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={handleUpdate}
+                      className="rounded-lg bg-[var(--sk-cyan)] text-[#090D16] text-xs font-semibold py-2 flex items-center justify-center gap-1.5"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      Simpan
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditingId(null)}
+                      className="rounded-lg bg-[var(--sk-surface-2)] text-[var(--sk-text-muted)] text-xs font-semibold py-2 flex items-center justify-center gap-1.5"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                      Batal
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-[var(--sk-surface-2)] flex items-center justify-center flex-shrink-0">
+                    <Landmark className="w-4 h-4 text-[var(--sk-text-muted)]" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-sm font-medium text-[var(--sk-text)] truncate">{wallet.label}</p>
+                      <span className="text-[9px] text-[var(--sk-text-dim)] bg-[var(--sk-surface-2)] rounded px-1.5 py-0.5 shrink-0">
+                        {WALLET_TYPE_LABELS[wallet.type]}
+                      </span>
+                    </div>
+                    <p className="text-xs font-semibold tabular-nums text-[var(--sk-text-muted)]" data-amount>
+                      {formatIDRCompact(wallet.balance)}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => startEdit(wallet)}
+                    className="w-7 h-7 rounded-lg bg-[var(--sk-surface-2)] text-[var(--sk-text-muted)] flex items-center justify-center shrink-0"
+                    aria-label={`Edit ${wallet.label}`}
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
+                  {!wallet.isBuiltIn && (
+                    <button
+                      onClick={() => removeWallet(wallet.id)}
+                      className="w-7 h-7 rounded-lg bg-[var(--sk-red-dim)] text-[var(--sk-red)] flex items-center justify-center shrink-0"
+                      aria-label={`Hapus ${wallet.label}`}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-1.5">
-                <p className="text-sm font-medium text-[var(--sk-text)] truncate">{wallet.label}</p>
-                <span className="text-[9px] text-[var(--sk-text-dim)] bg-[var(--sk-surface-2)] rounded px-1.5 py-0.5 shrink-0">
-                  {WALLET_TYPE_LABELS[wallet.type]}
-                </span>
-              </div>
-              <p className="text-xs font-semibold tabular-nums text-[var(--sk-text-muted)]" data-amount>
-                {formatIDRCompact(wallet.balance)}
-              </p>
-            </div>
-            {!wallet.isBuiltIn && wallet.balance === 0 && (
-              <button
-                onClick={() => removeWallet(wallet.id)}
-                className="w-6 h-6 rounded-lg bg-[var(--sk-red-dim)] text-[var(--sk-red)] flex items-center justify-center shrink-0"
-                aria-label={`Hapus ${wallet.label}`}
-              >
-                <X className="w-3 h-3" />
-              </button>
-            )}
-          </div>
-        ))}
+          )
+        })}
       </div>
     </section>
   )
@@ -262,7 +360,7 @@ function MoneyMovePanel() {
 export function TabSaku() {
   return (
     <div className="flex flex-col min-h-full md:ml-[72px]">
-      <div className="sticky top-0 z-20 bg-[#0B0F19]/90 backdrop-blur-xl border-b border-[var(--sk-border)] px-4 md:px-8 py-4">
+      <div className="sticky top-0 z-20 bg-[var(--sk-bg)] backdrop-blur-xl border-b border-[var(--sk-border)] px-4 md:px-8 py-4">
         <h2 className="text-base font-semibold text-[var(--sk-text)]">Saku</h2>
         <p className="text-xs text-[var(--sk-text-dim)] mt-0.5">
           Saldo, budget, pindah uang, dan tabungan.

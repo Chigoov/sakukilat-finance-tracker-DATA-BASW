@@ -61,6 +61,8 @@ export interface Toast {
   type: 'success' | 'error'
 }
 
+export type ThemeMode = 'system' | 'dark' | 'light'
+
 interface StoreValue {
   // auth
   user: MockUser | null
@@ -79,6 +81,7 @@ interface StoreValue {
   wallets: WalletAccount[]
   totalStored: number
   addWallet: (label: string, type: WalletType, balance: number, keywords: string[]) => void
+  updateWallet: (id: string, updates: { label: string; type: WalletType; balance: number; keywords: string[] }) => void
   removeWallet: (id: string) => void
   transferMoney: (fromWalletId: string, toWalletId: string, amount: number, note?: string, kind?: TransactionKind) => boolean
   saveMoney: (fromWalletId: string, amount: number, toWalletId?: string) => boolean
@@ -98,7 +101,10 @@ interface StoreValue {
 
   // ergonomics
   zenMode: boolean
+  themeMode: ThemeMode
   toggleZen: () => void
+  setThemeMode: (mode: ThemeMode) => void
+  updateProfile: (name: string) => void
 
   // feedback
   toast: Toast | null
@@ -110,6 +116,7 @@ interface AuthStore {
   authReady: boolean
   signInWithGoogle: () => Promise<void>
   signOut: () => void
+  updateProfile: (name: string) => void
 }
 
 interface TransactionDataStore {
@@ -130,6 +137,7 @@ interface WalletStore {
   wallets: WalletAccount[]
   totalStored: number
   addWallet: (label: string, type: WalletType, balance: number, keywords: string[]) => void
+  updateWallet: (id: string, updates: { label: string; type: WalletType; balance: number; keywords: string[] }) => void
   removeWallet: (id: string) => void
   transferMoney: (fromWalletId: string, toWalletId: string, amount: number, note?: string, kind?: TransactionKind) => boolean
   saveMoney: (fromWalletId: string, amount: number, toWalletId?: string) => boolean
@@ -152,7 +160,9 @@ interface CustomizationStore {
 
 interface PreferenceStore {
   zenMode: boolean
+  themeMode: ThemeMode
   toggleZen: () => void
+  setThemeMode: (mode: ThemeMode) => void
 }
 
 interface FeedbackStore {
@@ -179,6 +189,78 @@ const SEED_CATEGORIES: CustomCategory[] = [
   { id: 'peliharaan', label: 'Peliharaan', keywords: ['kucing', 'anjing', 'catfood', 'vet', 'grooming'] },
 ]
 const DEFAULT_MONTHLY_BUDGET = 1_500_000
+const STORAGE_KEY = 'sakukilat:v2:local-state'
+const DEMO_USER: MockUser = {
+  name: 'Teman SakuKilat',
+  givenName: 'Teman',
+  email: 'demo@sakukilat.local',
+  avatarUrl: '/avatar.png',
+}
+
+interface PersistedState {
+  transactions?: Array<Omit<Transaction, 'date'> & { date: string }>
+  wallets?: WalletAccount[]
+  monthlyBudget?: number
+  customPayments?: CustomPayment[]
+  customCategories?: CustomCategory[]
+  zenMode?: boolean
+  themeMode?: ThemeMode
+  profileName?: string | null
+}
+
+function reviveTransactions(items: PersistedState['transactions']): Transaction[] | null {
+  if (!Array.isArray(items)) return null
+
+  return items
+    .map(item => ({
+      ...item,
+      date: new Date(item.date),
+    }))
+    .filter(item => Number.isFinite(item.date.getTime()))
+}
+
+function loadPersistedState(): PersistedState {
+  if (typeof window === 'undefined') return {}
+
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as PersistedState
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch (error) {
+    console.warn('Gagal membaca auto-save SakuKilat:', error)
+    return {}
+  }
+}
+
+function persistState(state: PersistedState) {
+  if (typeof window === 'undefined') return
+
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
+  } catch (error) {
+    console.warn('Gagal menyimpan auto-save SakuKilat:', error)
+  }
+}
+
+function firstName(name: string): string {
+  return name.trim().split(/\s+/)[0] || 'Teman'
+}
+
+function applyProfileName(user: MockUser, profileName: string | null): MockUser {
+  const name = profileName?.trim()
+  if (!name) return user
+  return {
+    ...user,
+    name,
+    givenName: firstName(name),
+  }
+}
+
+function shouldUseLocalDemoAuth(): boolean {
+  if (typeof window === 'undefined') return false
+  return ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname)
+}
 
 function slugify(s: string): string {
   return s.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || `c-${Date.now()}`
@@ -262,22 +344,41 @@ function walletDropsBelowZero(wallets: WalletAccount[], transaction: Transaction
 
 // ── Provider ─────────────────────────────────────────────────────────────────
 export function StoreProvider({ children }: { children: ReactNode }) {
+  const persistedStateRef = useRef<PersistedState | null>(null)
+  if (persistedStateRef.current === null) {
+    persistedStateRef.current = loadPersistedState()
+  }
+  const persisted = persistedStateRef.current
+
   const [user, setUser] = useState<MockUser | null>(null)
   const [authReady, setAuthReady] = useState(false)
 
-  const [transactions, setTransactions] = useState<Transaction[]>(() => createSeedTransactions())
-  const [wallets, setWallets] = useState<WalletAccount[]>(() => createSeedWallets())
+  const [transactions, setTransactions] = useState<Transaction[]>(() => reviveTransactions(persisted.transactions) ?? createSeedTransactions())
+  const [wallets, setWallets] = useState<WalletAccount[]>(() => Array.isArray(persisted.wallets) && persisted.wallets.length > 0 ? persisted.wallets : createSeedWallets())
   const [lastActiveWalletId, setLastActiveWalletId] = useState('tunai')
   const [newTransactionId, setNewTransactionId] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [monthlyBudget, setMonthlyBudgetState] = useState(DEFAULT_MONTHLY_BUDGET)
+  const [monthlyBudget, setMonthlyBudgetState] = useState(() =>
+    typeof persisted.monthlyBudget === 'number' ? persisted.monthlyBudget : DEFAULT_MONTHLY_BUDGET
+  )
 
-  const [customPayments, setCustomPayments] = useState<CustomPayment[]>(SEED_PAYMENTS)
-  const [customCategories, setCustomCategories] = useState<CustomCategory[]>(SEED_CATEGORIES)
+  const [customPayments, setCustomPayments] = useState<CustomPayment[]>(() =>
+    Array.isArray(persisted.customPayments) ? persisted.customPayments : SEED_PAYMENTS
+  )
+  const [customCategories, setCustomCategories] = useState<CustomCategory[]>(() =>
+    Array.isArray(persisted.customCategories) ? persisted.customCategories : SEED_CATEGORIES
+  )
 
-  const [zenMode, setZenMode] = useState(false)
+  const [zenMode, setZenMode] = useState(() => Boolean(persisted.zenMode))
+  const [themeMode, setThemeModeState] = useState<ThemeMode>(() => persisted.themeMode ?? 'dark')
+  const [profileName, setProfileName] = useState<string | null>(() => persisted.profileName ?? null)
   const [toast, setToast] = useState<Toast | null>(null)
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const profileNameRef = useRef(profileName)
+
+  useEffect(() => {
+    profileNameRef.current = profileName
+  }, [profileName])
 
   useEffect(() => {
     void initFirebaseAnalytics()
@@ -285,18 +386,69 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const unsubscribe = onAuthStateChanged(
       firebaseAuth,
       currentUser => {
-        setUser(currentUser ? mapFirebaseUser(currentUser) : null)
+        const nextUser = currentUser
+          ? mapFirebaseUser(currentUser)
+          : shouldUseLocalDemoAuth()
+            ? DEMO_USER
+            : null
+
+        setUser(nextUser ? applyProfileName(nextUser, profileNameRef.current) : null)
         setAuthReady(true)
       },
       error => {
         console.error('Firebase auth session restore failed:', error)
-        setUser(null)
+        setUser(shouldUseLocalDemoAuth() ? applyProfileName(DEMO_USER, profileNameRef.current) : null)
         setAuthReady(true)
       }
     )
 
     return unsubscribe
   }, [])
+
+  useEffect(() => {
+    const root = document.documentElement
+    const media = window.matchMedia('(prefers-color-scheme: dark)')
+
+    const applyTheme = () => {
+      const resolved = themeMode === 'system'
+        ? media.matches ? 'dark' : 'light'
+        : themeMode
+
+      root.dataset.theme = resolved
+      root.classList.toggle('dark', resolved === 'dark')
+      root.classList.toggle('light', resolved === 'light')
+      root.style.colorScheme = resolved
+    }
+
+    applyTheme()
+    media.addEventListener('change', applyTheme)
+    return () => media.removeEventListener('change', applyTheme)
+  }, [themeMode])
+
+  useEffect(() => {
+    persistState({
+      transactions: transactions.map(transaction => ({
+        ...transaction,
+        date: transaction.date.toISOString(),
+      })),
+      wallets,
+      monthlyBudget,
+      customPayments,
+      customCategories,
+      zenMode,
+      themeMode,
+      profileName,
+    })
+  }, [
+    transactions,
+    wallets,
+    monthlyBudget,
+    customPayments,
+    customCategories,
+    zenMode,
+    themeMode,
+    profileName,
+  ])
 
   // Keep the display registry in sync with custom slang
   useEffect(() => {
@@ -338,7 +490,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const signInWithGoogle = useCallback(async () => {
     try {
       const result = await signInWithPopup(firebaseAuth, googleProvider)
-      setUser(mapFirebaseUser(result.user))
+      setUser(applyProfileName(mapFirebaseUser(result.user), profileNameRef.current))
       showToast('Login Google berhasil. Saku siap dipakai.', 'success')
     } catch (error) {
       console.error('Firebase Google sign-in failed:', error)
@@ -347,7 +499,25 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }, [showToast])
 
+  const updateProfile = useCallback((name: string) => {
+    const trimmed = name.trim()
+    if (!trimmed) {
+      showToast('Nama profil tidak boleh kosong.', 'error')
+      return
+    }
+
+    setProfileName(trimmed)
+    setUser(prev => prev ? { ...prev, name: trimmed, givenName: firstName(trimmed) } : prev)
+    showToast('Profil diperbarui.', 'success')
+  }, [showToast])
+
   const signOut = useCallback(async () => {
+    if (shouldUseLocalDemoAuth()) {
+      setUser(applyProfileName(DEMO_USER, profileNameRef.current))
+      showToast('Mode demo lokal tetap aktif.', 'success')
+      return
+    }
+
     try {
       await firebaseSignOut(firebaseAuth)
       setUser(null)
@@ -378,6 +548,39 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           : [...prev, { id: wallet.id, label: wallet.label, keywords: wallet.keywords }]
       )
       showToast(`Saku "${wallet.label}" ditambahkan.`, 'success')
+    },
+    [showToast]
+  )
+
+  const updateWallet = useCallback(
+    (id: string, updates: { label: string; type: WalletType; balance: number; keywords: string[] }) => {
+      const label = updates.label.trim()
+      if (!label) {
+        showToast('Nama saku tidak boleh kosong.', 'error')
+        return
+      }
+
+      const normalizedKeywords = normalizeKeywords(id, updates.keywords)
+      setWallets(prev =>
+        prev.map(wallet =>
+          wallet.id === id
+            ? {
+                ...wallet,
+                label,
+                type: updates.type,
+                balance: Math.round(updates.balance),
+                keywords: normalizedKeywords,
+              }
+            : wallet
+        )
+      )
+      setCustomPayments(prev => {
+        const payment = { id, label, keywords: normalizedKeywords }
+        return prev.some(item => item.id === id)
+          ? prev.map(item => item.id === id ? payment : item)
+          : [...prev, payment]
+      })
+      showToast(`Saku "${label}" diperbarui.`, 'success')
     },
     [showToast]
   )
@@ -572,9 +775,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const toggleZen = useCallback(() => setZenMode(z => !z), [])
 
+  const setThemeMode = useCallback((mode: ThemeMode) => {
+    setThemeModeState(mode)
+    showToast(`Tema ${mode === 'system' ? 'mengikuti perangkat' : mode === 'dark' ? 'gelap' : 'terang'} diaktifkan.`, 'success')
+  }, [showToast])
+
   const authValue = useMemo<AuthStore>(
-    () => ({ user, authReady, signInWithGoogle, signOut }),
-    [user, authReady, signInWithGoogle, signOut]
+    () => ({ user, authReady, signInWithGoogle, signOut, updateProfile }),
+    [user, authReady, signInWithGoogle, signOut, updateProfile]
   )
 
   const transactionDataValue = useMemo<TransactionDataStore>(
@@ -597,11 +805,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       wallets,
       totalStored,
       addWallet,
+      updateWallet,
       removeWallet,
       transferMoney,
       saveMoney,
     }),
-    [wallets, totalStored, addWallet, removeWallet, transferMoney, saveMoney]
+    [wallets, totalStored, addWallet, updateWallet, removeWallet, transferMoney, saveMoney]
   )
 
   const budgetValue = useMemo<BudgetStore>(
@@ -631,8 +840,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   )
 
   const preferenceValue = useMemo<PreferenceStore>(
-    () => ({ zenMode, toggleZen }),
-    [zenMode, toggleZen]
+    () => ({ zenMode, themeMode, toggleZen, setThemeMode }),
+    [zenMode, themeMode, toggleZen, setThemeMode]
   )
 
   const feedbackValue = useMemo<FeedbackStore>(
@@ -646,6 +855,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       authReady,
       signInWithGoogle,
       signOut,
+      updateProfile,
       transactions,
       addTransaction,
       deleteTransaction,
@@ -654,6 +864,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       wallets,
       totalStored,
       addWallet,
+      updateWallet,
       removeWallet,
       transferMoney,
       saveMoney,
@@ -667,18 +878,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       removeCustomCategory,
       parserExtras,
       zenMode,
+      themeMode,
       toggleZen,
+      setThemeMode,
       toast,
       showToast,
     }),
     [
-      user, authReady, signInWithGoogle, signOut,
+      user, authReady, signInWithGoogle, signOut, updateProfile,
       transactions, addTransaction, deleteTransaction, newTransactionId, isSubmitting,
-      wallets, totalStored, addWallet, removeWallet, transferMoney, saveMoney,
+      wallets, totalStored, addWallet, updateWallet, removeWallet, transferMoney, saveMoney,
       monthlyBudget, setMonthlyBudget,
       customPayments, customCategories, addCustomPayment, removeCustomPayment,
       addCustomCategory, removeCustomCategory, parserExtras,
-      zenMode, toggleZen, toast, showToast,
+      zenMode, themeMode, toggleZen, setThemeMode, toast, showToast,
     ]
   )
 

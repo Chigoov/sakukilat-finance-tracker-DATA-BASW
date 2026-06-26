@@ -70,7 +70,7 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <link rel="apple-touch-icon" href="/apple-icon.png" />
       </head>
-      <body className="font-sans antialiased bg-[#090D16] overscroll-none">
+      <body className="font-sans antialiased bg-[var(--sk-bg)] overscroll-none">
         <StoreProvider>{children}</StoreProvider>
       </body>
     </html>
