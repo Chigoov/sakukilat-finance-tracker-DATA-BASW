@@ -118,11 +118,18 @@ const PAYMENT_MAP: Array<{ method: PaymentMethod; exact: string[]; contains: str
 
 const CURRENCY_TOKENS = new Set(['rp', 'idr'])
 const AMOUNT_SUFFIX_MULTIPLIERS: Record<string, number> = {
+  // Thousands
   k: 1_000,
   rb: 1_000,
+  rbu: 1_000,     // typo umum ("50rbu")
   ribu: 1_000,
+  rebu: 1_000,    // slang ketik cepat ("50rebu")
+  // Millions
   jt: 1_000_000,
   juta: 1_000_000,
+  jutaan: 1_000_000,
+  jeti: 1_000_000, // slang santai ("5jeti")
+  // Billions
   m: 1_000_000_000,
   miliar: 1_000_000_000,
   milyar: 1_000_000_000,
@@ -166,7 +173,7 @@ const LEADING_FILLER_WORDS = new Set([
 // "sama" di tengah deskripsi ("nasi sama telur") tidak salah dipotong — keputusan
 // final pemisahan tetap divalidasi oleh splitEntries (tiap sisi wajib punya nominal).
 const SEGMENT_SEPARATOR_PATTERN =
-  /\s*(?:,|;|\+|&|\bdan\b|\bsama\b|\blalu\b|\bterus\b|\bkemudian\b)\s*/i
+  /\s*(?:,|;|\+|&|\n|\.(?=\s)|\bdan\b|\bsama\b|\bama\b|\blalu\b|\bllu\b|\bterus\b|\btrs\b|\bkemudian\b|\babis(?:\s+itu)?\b|\bhabis\s+itu\b)\s*/i
 
 // ── Category keyword map ─────────────────────────────────────────────────────
 // Keywords are matched as whole words against the lowercased description
@@ -333,9 +340,28 @@ function normalizeNumberString(raw: string, mode: 'plain' | 'suffix' = 'suffix')
 function parseAmountToken(token: string): number | null {
   const t = normalizeToken(token).replace(/^(rp|idr)(?=\d)/, '')
 
+  // Composite "1jt500" / "2juta750" pattern — e.g. "1jt500" = 1.500.000
+  // Captures the major suffix (jt/juta) and a trailing thousand-tail of 1-3 digits.
+  const compositePattern = /^(\d+)(jt|juta|jutaan|jeti)(\d{1,3})$/
+  const compositeMatch = t.match(compositePattern)
+  if (compositeMatch) {
+    const major = Number(compositeMatch[1])
+    const tail  = Number(compositeMatch[3])
+    if (Number.isFinite(major) && Number.isFinite(tail)) {
+      // Tail of 3 digits → exact thousands (e.g. "1jt500" → 1.500.000);
+      // shorter tails are normalised to the same magnitude (e.g. "1jt5" → 1.500.000)
+      const tailValue = compositeMatch[3].length === 3
+        ? tail * 1_000
+        : tail * Math.pow(10, 6 - compositeMatch[3].length)
+      return major * 1_000_000 + tailValue
+    }
+  }
+
   // suffix-based patterns — capture numeric part then multiply
-  // supports: 25k, 25K, 25rb, 25ribu, 2jt, 2juta, 1.5jt, 1,5jt, 3m, 3miliar
-  const suffixPattern = /^(\d+(?:[.,]\d+)*)(k|rb|ribu|jt|juta|m|miliar|milyar)$/
+  // supports: 25k, 25K, 25rb, 25rbu, 25ribu, 25rebu, 2jt, 2juta, 5jeti,
+  //           1.5jt, 1,5jt, 3m, 3miliar
+  const suffixPattern =
+    /^(\d+(?:[.,]\d+)*)(k|rb|rbu|ribu|rebu|jt|juta|jutaan|jeti|m|miliar|milyar)$/
   const suffixMatch = t.match(suffixPattern)
 
   if (suffixMatch) {
