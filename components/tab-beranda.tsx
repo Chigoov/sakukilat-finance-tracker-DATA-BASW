@@ -2,7 +2,7 @@
 
 import { memo, useEffect, useMemo, useState } from 'react'
 import { Eye, EyeOff, TrendingUp, TrendingDown, Zap } from 'lucide-react'
-import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts'
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts'
 import {
   useAuthStore,
   usePreferenceStore,
@@ -104,6 +104,41 @@ function useClientDateInfo() {
   return dateInfo
 }
 
+function PieHoverTooltip({
+  active,
+  payload,
+}: {
+  active?: boolean
+  payload?: Array<{
+    payload: { category: string; total: number; pct: number }
+  }>
+}) {
+  if (!active || !payload?.length) return null
+
+  const slice = payload[0].payload
+  const config = getCategoryConfig(slice.category)
+
+  return (
+    <div className="rounded-xl bg-[var(--sk-surface-2)] border border-[var(--sk-border-2)] px-3 py-2 shadow-2xl">
+      <div className="flex items-center gap-2">
+        <span
+          className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+          style={{ background: getCategoryHex(slice.category) }}
+        />
+        <span className="text-xs font-semibold text-[var(--sk-text)]">{config.label}</span>
+      </div>
+      <div className="mt-1 flex items-center gap-2">
+        <span className="text-sm font-bold tabular-nums text-[var(--sk-red)]">
+          {formatIDRCompact(slice.total)}
+        </span>
+        <span className="text-[11px] font-semibold tabular-nums text-[var(--sk-text-muted)]">
+          {Math.round(slice.pct * 100)}%
+        </span>
+      </div>
+    </div>
+  )
+}
+
 export const TabBeranda = memo(function TabBeranda() {
   const { user } = useAuthStore()
   const { transactions } = useTransactionData()
@@ -129,15 +164,6 @@ export const TabBeranda = memo(function TabBeranda() {
     () => slices.length > 0 ? slices : [{ category: 'empty', total: 1, pct: 1 }],
     [slices]
   )
-  const chartDetailSlices = useMemo(() => slices.slice(0, 4), [slices])
-  const otherChartSlice = useMemo(() => {
-    const rest = slices.slice(4)
-    if (rest.length === 0) return null
-    return {
-      total: rest.reduce((sum, slice) => sum + slice.total, 0),
-      pct: rest.reduce((sum, slice) => sum + slice.pct, 0),
-    }
-  }, [slices])
 
   const recentTransactions = useMemo(() =>
     [...transactions].sort((a, b) => b.date.getTime() - a.date.getTime()).slice(0, 7),
@@ -285,16 +311,25 @@ export const TabBeranda = memo(function TabBeranda() {
             </div>
 
             {/* Right: Donut chart */}
-            <div className={cn('w-full sm:w-[360px] md:w-[420px] flex-shrink-0 relative', zenMode && 'sk-zen-blur')}>
+            <div className={cn('w-full sm:w-44 md:w-48 flex-shrink-0 relative flex flex-col items-center', zenMode && 'sk-zen-blur')}>
               {isEmpty ? (
-                <div className="ml-auto w-36 h-36 md:w-40 md:h-40 rounded-full border-4 border-dashed border-[var(--sk-border-2)] flex items-center justify-center">
+                <div className="w-36 h-36 md:w-40 md:h-40 rounded-full border-4 border-dashed border-[var(--sk-border-2)] flex items-center justify-center">
                   <span className="text-[10px] text-[var(--sk-text-dim)] text-center leading-tight">Belum<br/>ada data</span>
                 </div>
               ) : (
-                <div className="grid grid-cols-[136px_minmax(0,1fr)] md:grid-cols-[160px_minmax(0,1fr)] gap-3 items-center">
-                  <div className="w-36 h-36 md:w-40 md:h-40">
+                <div className="w-full">
+                  <div className="mb-1 text-center">
+                    <p className="text-[10px] uppercase tracking-widest text-[var(--sk-text-dim)]">Alokasi keluar</p>
+                    <p className="text-[10px] text-[var(--sk-text-dim)]">Arahkan ke potongan chart</p>
+                  </div>
+                  <div className="w-36 h-36 md:w-40 md:h-40 mx-auto">
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
+                        <Tooltip
+                          content={<PieHoverTooltip />}
+                          cursor={false}
+                          wrapperStyle={{ outline: 'none', zIndex: 20 }}
+                        />
                         <Pie
                           data={chartData}
                           cx="50%"
@@ -315,39 +350,6 @@ export const TabBeranda = memo(function TabBeranda() {
                         </Pie>
                       </PieChart>
                     </ResponsiveContainer>
-                  </div>
-
-                  <div className="min-w-0 rounded-2xl bg-[var(--sk-surface-2)] border border-[var(--sk-border)] p-3">
-                    <div className="flex items-baseline justify-between gap-2 mb-2">
-                      <p className="text-[10px] uppercase tracking-widest text-[var(--sk-text-dim)]">Alokasi keluar</p>
-                      <p className="text-[10px] font-semibold tabular-nums text-[var(--sk-red)]">{formatIDRCompact(expense)}</p>
-                    </div>
-                    <div className="flex flex-col gap-1.5">
-                      {chartDetailSlices.map(slice => {
-                        const conf = getCategoryConfig(slice.category)
-                        return (
-                          <div key={slice.category} className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2">
-                            <span
-                              className="w-2.5 h-2.5 rounded-full"
-                              style={{ background: getCategoryHex(slice.category) }}
-                            />
-                            <span className="truncate text-[11px] font-medium text-[var(--sk-text-muted)]">{conf.label}</span>
-                            <span className="text-[11px] font-bold tabular-nums text-[var(--sk-text)]">
-                              {Math.round(slice.pct * 100)}%
-                            </span>
-                          </div>
-                        )
-                      })}
-                      {otherChartSlice && (
-                        <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2">
-                          <span className="w-2.5 h-2.5 rounded-full bg-[var(--sk-text-dim)]" />
-                          <span className="truncate text-[11px] font-medium text-[var(--sk-text-muted)]">Lainnya</span>
-                          <span className="text-[11px] font-bold tabular-nums text-[var(--sk-text)]">
-                            {Math.round(otherChartSlice.pct * 100)}%
-                          </span>
-                        </div>
-                      )}
-                    </div>
                   </div>
                 </div>
               )}

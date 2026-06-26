@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import { Landmark, Wallet } from 'lucide-react'
 import { usePreferenceStore, useWalletStore } from '@/lib/store'
 import { formatIDR, formatIDRCompact } from '@/lib/parser'
@@ -17,14 +18,16 @@ const TYPE_LABELS: Record<string, string> = {
 export function WalletSummary() {
   const { wallets, totalStored } = useWalletStore()
   const { zenMode } = usePreferenceStore()
-  const visibleWallets = wallets
+  const [showAll, setShowAll] = useState(false)
+  const sortedWallets = wallets
     .slice()
     .sort((a, b) => b.balance - a.balance)
-    .slice(0, 5)
+  const visibleWallets = showAll ? sortedWallets : sortedWallets.slice(0, 10)
+  const hasMoreWallets = sortedWallets.length > 10
 
   return (
-    <section className="px-4 md:px-8 pb-4">
-      <div className="rounded-2xl bg-[var(--sk-surface)] border border-[var(--sk-border)] p-4">
+    <section className="px-4 md:px-8 pb-4 h-full">
+      <div className="rounded-2xl bg-[var(--sk-surface)] border border-[var(--sk-border)] p-4 h-full flex flex-col">
         <div className="flex items-center gap-2 mb-3">
           <div className="w-7 h-7 rounded-lg bg-[var(--sk-cyan-dim)] flex items-center justify-center">
             <Wallet className="w-4 h-4 text-[var(--sk-cyan)]" />
@@ -52,6 +55,16 @@ export function WalletSummary() {
             </div>
           ))}
         </div>
+
+        {hasMoreWallets && (
+          <button
+            type="button"
+            onClick={() => setShowAll(value => !value)}
+            className="mt-3 rounded-xl bg-[var(--sk-surface-2)] border border-[var(--sk-border)] px-3 py-2 text-xs font-semibold text-[var(--sk-cyan)] hover:bg-[var(--sk-surface-3)] transition-colors"
+          >
+            {showAll ? 'Tampilkan 10 terbesar' : `Lihat semua ${sortedWallets.length} saku`}
+          </button>
+        )}
       </div>
     </section>
   )

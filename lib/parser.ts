@@ -104,7 +104,7 @@ const PAYMENT_MAP: Array<{ method: PaymentMethod; exact: string[]; contains: str
   { method: 'gopay',     exact: ['gopay', 'gp'],                        contains: [] },
   { method: 'ovo',       exact: ['ovo'],                                 contains: [] },
   { method: 'dana',      exact: ['dana'],                                contains: [] },
-  { method: 'shopeepay', exact: ['shopeepay', 'spay'],                   contains: ['shopeepay'] },
+  { method: 'shopeepay', exact: ['shopeepay', 'shopepay', 'shopee', 'spay'], contains: ['shopeepay', 'shopepay'] },
   { method: 'qris',      exact: ['qris'],                                contains: [] },
   { method: 'jago',      exact: ['jago'],                                contains: [] },
   { method: 'bca',       exact: ['bca', 'klikbca'],                      contains: [] },

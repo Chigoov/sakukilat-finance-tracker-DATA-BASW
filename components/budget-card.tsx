@@ -14,8 +14,8 @@ export function BudgetCard() {
   const weekPct = Math.min(100, Math.round(status.pctWeekUsed * 100))
 
   return (
-    <section className="px-4 md:px-8 pb-4">
-      <div className="rounded-2xl bg-[var(--sk-surface)] border border-[var(--sk-border)] p-4">
+    <section className="px-4 md:px-8 pb-4 h-full">
+      <div className="rounded-2xl bg-[var(--sk-surface)] border border-[var(--sk-border)] p-4 h-full">
         <div className="flex items-center gap-2 mb-3">
           <div className={cn(
             'w-7 h-7 rounded-lg flex items-center justify-center',

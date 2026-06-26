@@ -34,7 +34,7 @@ export const SEED_WALLETS: WalletAccount[] = [
   { id: 'gopay', label: 'GoPay', type: 'ewallet', balance: 240_000, keywords: ['gopay', 'gp'], isBuiltIn: true },
   { id: 'ovo', label: 'OVO', type: 'ewallet', balance: 185_000, keywords: ['ovo'], isBuiltIn: true },
   { id: 'dana', label: 'DANA', type: 'ewallet', balance: 165_000, keywords: ['dana'], isBuiltIn: true },
-  { id: 'shopeepay', label: 'ShopeePay', type: 'ewallet', balance: 90_000, keywords: ['shopeepay', 'spay'], isBuiltIn: true },
+  { id: 'shopeepay', label: 'ShopeePay', type: 'ewallet', balance: 90_000, keywords: ['shopeepay', 'shopepay', 'shopee', 'spay'], isBuiltIn: true },
   { id: 'tabungan', label: 'Tabungan', type: 'savings', balance: 2_500_000, keywords: ['tabungan', 'simpan', 'simpanan'], isBuiltIn: true },
 ]
 
