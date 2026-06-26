@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Home, BarChart2, Wallet, User } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
@@ -34,8 +34,14 @@ function AppShell() {
   const { parserExtras } = useCustomizationStore()
   const [activeTab, setActiveTab] = useState<Tab>('beranda')
 
-  // Loading splash
-  if (!authReady) {
+  // Hydration guard — ensures the first client render matches what the server
+  // emits (a single Splash node). Without this, branching on `authReady`
+  // produced a "tree mismatch" warning + visible flicker on mobile networks.
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
+
+  // Loading splash (server + first client render)
+  if (!mounted || !authReady) {
     return (
       <div className="min-h-[100dvh] bg-[var(--sk-bg)] flex items-center justify-center">
         <div className="w-10 h-10 rounded-2xl bg-[var(--sk-cyan)] animate-pulse-soft flex items-center justify-center shadow-[0_0_30px_var(--sk-cyan-glow)]">
