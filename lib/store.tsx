@@ -380,6 +380,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     profileNameRef.current = profileName
   }, [profileName])
 
+  // PATCH (Phase 2): ref "nilai terkini" untuk wallets & transactions.
+  // Dipakai di dalam callback supaya callback tidak perlu mencantumkan wallets /
+  // transactions pada dependency-nya — ini memangkas pembuatan ulang callback
+  // (dan re-render konsumen context) setiap kali saldo atau daftar transaksi
+  // berubah, sekaligus memastikan pembacaan saldo selalu mutakhir (penting untuk
+  // input multi-item yang men-submit beberapa segmen berurutan).
+  const walletsRef = useRef(wallets)
+  const transactionsRef = useRef(transactions)
+
+  useEffect(() => {
+    walletsRef.current = wallets
+  }, [wallets])
+
+  useEffect(() => {
+    transactionsRef.current = transactions
+  }, [transactions])
+
   useEffect(() => {
     void initFirebaseAnalytics()
 
@@ -587,7 +604,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const removeWallet = useCallback(
     (id: string) => {
-      const wallet = wallets.find(item => item.id === id)
+      const wallet = walletsRef.current.find(item => item.id === id)
       if (!wallet) return
       if (wallet.isBuiltIn || wallet.balance !== 0) {
         showToast('Saku bawaan atau bersaldo tidak bisa dihapus.', 'error')
@@ -596,7 +613,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setWallets(prev => prev.filter(item => item.id !== id))
       showToast(`Saku "${wallet.label}" dihapus.`, 'success')
     },
-    [wallets, showToast]
+    [showToast]
   )
 
   const createMove = useCallback(
@@ -636,7 +653,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         showToast('Pindah uang belum valid.', 'error')
         return false
       }
-      showToast(kind === 'saving' ? 'Uang disimpan. Pelan-pelan jadi tebal.' : 'Uang dipindahkan.', 'success')
+      // PATCH (Phase 2): peringatkan bila saku sumber jadi minus — konsisten dengan
+      // perilaku pengeluaran biasa. walletsRef masih memegang nilai pra-pindah pada
+      // handler sinkron ini, jadi cek dilakukan terhadap saldo sebelum mutasi.
+      if (walletDropsBelowZero(walletsRef.current, move)) {
+        showToast('⚠️ Saldo saku sumber jadi minus!', 'error')
+      } else {
+        showToast(kind === 'saving' ? 'Uang disimpan. Pelan-pelan jadi tebal.' : 'Uang dipindahkan.', 'success')
+      }
       return true
     },
     [createMove, showToast]
@@ -687,7 +711,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
 
       // Step 1 — instant local update
-      if (optimistic.type === 'expense' && walletDropsBelowZero(wallets, optimistic)) {
+      if (optimistic.type === 'expense' && walletDropsBelowZero(walletsRef.current, optimistic)) {
         showToast('⚠️ Saldo dompet ini minus!', 'error')
       }
       setTransactions(prev => [optimistic, ...prev])
@@ -719,20 +743,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       })
       return true
     },
-    [parserExtras, showToast, transferMoney, wallets]
+    [parserExtras, showToast, transferMoney]
   )
 
   const deleteTransaction = useCallback(
     (id: string) => {
       // SUPABASE: await supabase.from('transactions').delete().eq('id', id)
-      const transaction = transactions.find(t => t.id === id)
+      const transaction = transactionsRef.current.find(t => t.id === id)
       if (transaction) {
         setWallets(prev => adjustWallets(prev, transactionImpact(transaction, -1)))
       }
       setTransactions(prev => prev.filter(t => t.id !== id))
       showToast('Transaksi dihapus.', 'success')
     },
-    [transactions, showToast]
+    [showToast]
   )
 
   // ── Custom slang management ──────────────────────────────────────────────────
