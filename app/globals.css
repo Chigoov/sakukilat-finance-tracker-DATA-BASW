@@ -249,19 +249,46 @@ html[data-theme="light"] {
 .animate-fade-in    { animation: sk-fade-in   0.3s ease both; }
 .animate-sheet-up   { animation: sk-sheet-up  0.32s cubic-bezier(0.16,1,0.3,1) both; }
 
-/* ── Zen Mode: blur sensitive wealth figures without unmounting them ── */
+/* ── Zen Mode: hide sensitive wealth figures without unmounting them ──
+ * Note: we avoid `filter: blur()` on mobile because stacking it inside
+ * containers that already use `backdrop-filter` + `overflow-hidden` causes
+ * vertical color-stripe GPU compositing artifacts on Android Chromium
+ * (Adreno/Mali). We use a text-shadow blur trick that the GPU can render
+ * as a single fast pass without tile readback.
+ */
 .sk-zen-blur {
-  filter: blur(10px);
-  opacity: 0.75;
-  transition: filter 0.3s ease, opacity 0.3s ease;
+  color: transparent !important;
+  text-shadow: 0 0 12px var(--sk-text-muted);
+  letter-spacing: 0.02em;
   user-select: none;
   pointer-events: none;
+  transition: text-shadow 0.25s ease;
 }
 
-/* ── Glass surface utility ── */
+/* ── Glass surface utility ──
+ * Stacking two `backdrop-filter: blur()` layers (bottom nav + smart input)
+ * on the same Y axis caused visible seams on low-end Android. We now
+ * progressive-enhance: solid-ish surface by default, blur only when the
+ * browser supports it AND the viewport is wide enough to absorb the cost.
+ */
 .sk-glass {
-  background: color-mix(in srgb, var(--sk-surface) 86%, transparent);
-  backdrop-filter: blur(16px) saturate(180%);
-  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  background: color-mix(in srgb, var(--sk-surface) 94%, transparent);
   border: 1px solid var(--sk-border-2);
+  isolation: isolate;
+}
+@supports ((backdrop-filter: blur(12px)) or (-webkit-backdrop-filter: blur(12px))) {
+  .sk-glass {
+    background: color-mix(in srgb, var(--sk-surface) 80%, transparent);
+    backdrop-filter: blur(14px) saturate(160%);
+    -webkit-backdrop-filter: blur(14px) saturate(160%);
+  }
+}
+/* Below 480px we disable backdrop-filter to prevent compositing stripes on
+ * low-end mobile GPUs — the dark surface is opaque enough on its own. */
+@media (max-width: 480px) {
+  .sk-glass {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    background: color-mix(in srgb, var(--sk-surface) 97%, transparent);
+  }
 }
