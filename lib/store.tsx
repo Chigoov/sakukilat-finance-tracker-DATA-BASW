@@ -31,6 +31,13 @@ import {
   type WalletType,
 } from './mock-data'
 import {
+  onAuthStateChanged,
+  signInWithPopup,
+  signOut as firebaseSignOut,
+  type User as FirebaseUser,
+} from 'firebase/auth'
+import { firebaseAuth, googleProvider, initFirebaseAnalytics } from './firebase'
+import {
   parseEntry,
   type ParserExtras,
   type CustomPayment,
@@ -165,13 +172,6 @@ const PreferenceContext = createContext<PreferenceStore | null>(null)
 const FeedbackContext = createContext<FeedbackStore | null>(null)
 
 // ── Seeds ──────────────────────────────────────────────────────────────────────
-const MOCK_GOOGLE_USER: MockUser = {
-  name: 'Raka Pradnya',
-  givenName: 'Raka',
-  email: 'raka.pradnya@gmail.com',
-  avatarUrl: '/avatar.png',
-}
-
 const SEED_PAYMENTS: CustomPayment[] = [
   { id: 'seabank', label: 'SeaBank', keywords: ['seabank', 'sea'] },
 ]
@@ -186,6 +186,18 @@ function slugify(s: string): string {
 
 function normalizeKeywords(id: string, keywords: string[]): string[] {
   return Array.from(new Set([id, ...keywords.map(k => k.toLowerCase().trim()).filter(Boolean)]))
+}
+
+function mapFirebaseUser(firebaseUser: FirebaseUser): MockUser {
+  const displayName = firebaseUser.displayName?.trim() || firebaseUser.email?.split('@')[0] || 'Teman SakuKilat'
+  const givenName = displayName.split(/\s+/)[0] || 'Teman'
+
+  return {
+    name: displayName,
+    givenName,
+    email: firebaseUser.email ?? 'Email belum tersedia',
+    avatarUrl: firebaseUser.photoURL ?? '/avatar.png',
+  }
 }
 
 function createWallet(label: string, type: WalletType, balance: number, keywords: string[]): WalletAccount {
@@ -238,6 +250,16 @@ function transactionImpact(transaction: Transaction, direction: 1 | -1): Record<
   return { [transaction.paymentMethod]: transaction.amount * direction }
 }
 
+function walletDropsBelowZero(wallets: WalletAccount[], transaction: Transaction): boolean {
+  const impacts = transactionImpact(transaction, 1)
+
+  return Object.entries(impacts).some(([walletId, delta]) => {
+    if (delta >= 0) return false
+    const wallet = wallets.find(item => item.id === walletId)
+    return (wallet?.balance ?? 0) + delta < 0
+  })
+}
+
 // ── Provider ─────────────────────────────────────────────────────────────────
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<MockUser | null>(null)
@@ -245,6 +267,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const [transactions, setTransactions] = useState<Transaction[]>(() => createSeedTransactions())
   const [wallets, setWallets] = useState<WalletAccount[]>(() => createSeedWallets())
+  const [lastActiveWalletId, setLastActiveWalletId] = useState('tunai')
   const [newTransactionId, setNewTransactionId] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [monthlyBudget, setMonthlyBudgetState] = useState(DEFAULT_MONTHLY_BUDGET)
@@ -256,11 +279,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [toast, setToast] = useState<Toast | null>(null)
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Simulate Supabase session restore on mount
   useEffect(() => {
-    // SUPABASE: const { data } = await supabase.auth.getSession()
-    const t = setTimeout(() => setAuthReady(true), 350)
-    return () => clearTimeout(t)
+    void initFirebaseAnalytics()
+
+    const unsubscribe = onAuthStateChanged(
+      firebaseAuth,
+      currentUser => {
+        setUser(currentUser ? mapFirebaseUser(currentUser) : null)
+        setAuthReady(true)
+      },
+      error => {
+        console.error('Firebase auth session restore failed:', error)
+        setUser(null)
+        setAuthReady(true)
+      }
+    )
+
+    return unsubscribe
   }, [])
 
   // Keep the display registry in sync with custom slang
@@ -285,8 +320,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         ...customPayments.map(p => ({ id: p.id, label: p.label, keywords: p.keywords })),
       ],
       categories: customCategories.map(c => ({ id: c.id, label: c.label, keywords: c.keywords })),
+      lastActiveWalletId,
     }),
-    [wallets, customPayments, customCategories]
+    [wallets, customPayments, customCategories, lastActiveWalletId]
   )
 
   const showToast = useCallback((text: string, type: 'success' | 'error') => {
@@ -300,15 +336,27 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   // ── Auth ──────────────────────────────────────────────────────────────────
   const signInWithGoogle = useCallback(async () => {
-    // SUPABASE: await supabase.auth.signInWithOAuth({ provider: 'google' })
-    await new Promise(res => setTimeout(res, 700))
-    setUser(MOCK_GOOGLE_USER)
-  }, [])
+    try {
+      const result = await signInWithPopup(firebaseAuth, googleProvider)
+      setUser(mapFirebaseUser(result.user))
+      showToast('Login Google berhasil. Saku siap dipakai.', 'success')
+    } catch (error) {
+      console.error('Firebase Google sign-in failed:', error)
+      showToast('Login Google gagal. Coba lagi sebentar.', 'error')
+      throw error
+    }
+  }, [showToast])
 
-  const signOut = useCallback(() => {
-    // SUPABASE: await supabase.auth.signOut()
-    setUser(null)
-  }, [])
+  const signOut = useCallback(async () => {
+    try {
+      await firebaseSignOut(firebaseAuth)
+      setUser(null)
+      showToast('Kamu sudah keluar.', 'success')
+    } catch (error) {
+      console.error('Firebase sign-out failed:', error)
+      showToast('Gagal keluar. Coba lagi.', 'error')
+    }
+  }, [showToast])
 
   const totalStored = useMemo(
     () => wallets.reduce((sum, wallet) => sum + wallet.balance, 0),
@@ -370,6 +418,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
       setWallets(prev => adjustWallets(prev, transactionImpact(move, 1)))
       setTransactions(prev => [move, ...prev])
+      setLastActiveWalletId(fromWalletId)
       setNewTransactionId(id)
       setTimeout(() => setNewTransactionId(null), 700)
       return move
@@ -405,6 +454,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return false
       }
 
+      if (parsed.warning) {
+        showToast(parsed.warning, 'error')
+      }
+
       if (parsed.kind === 'transfer' || parsed.kind === 'saving') {
         return transferMoney(
           parsed.fromWalletId,
@@ -431,8 +484,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
 
       // Step 1 — instant local update
+      if (optimistic.type === 'expense' && walletDropsBelowZero(wallets, optimistic)) {
+        showToast('⚠️ Saldo dompet ini minus!', 'error')
+      }
       setTransactions(prev => [optimistic, ...prev])
       setWallets(prev => adjustWallets(prev, transactionImpact(optimistic, 1)))
+      setLastActiveWalletId(optimistic.paymentMethod)
       setNewTransactionId(optimisticId)
       setIsSubmitting(false)
 
@@ -444,21 +501,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
       // Step 2 — background "Supabase" mutation
       // SUPABASE: await supabase.from('transactions').insert(...)
-      const result = await mockSupabaseMutate(optimistic)
-      if (result.success) {
-        setTransactions(prev =>
-          prev.map(t => (t.id === optimisticId ? { ...t, isPending: false, syncStatus: 'synced' } : t))
-        )
-        showToast('Tercatat! Santai, kamu pegang kendali.', 'success')
-      } else {
-        setTransactions(prev =>
-          prev.map(t => (t.id === optimisticId ? { ...t, isPending: false, syncStatus: 'error' } : t))
-        )
-        showToast('Sinkronisasi gagal, akan dicoba lagi.', 'error')
-      }
+      void mockSupabaseMutate(optimistic).then(result => {
+        if (result.success) {
+          setTransactions(prev =>
+            prev.map(t => (t.id === optimisticId ? { ...t, isPending: false, syncStatus: 'synced' } : t))
+          )
+          showToast('Tercatat! Santai, kamu pegang kendali.', 'success')
+        } else {
+          setTransactions(prev =>
+            prev.map(t => (t.id === optimisticId ? { ...t, isPending: false, syncStatus: 'error' } : t))
+          )
+          showToast('Sinkronisasi gagal, akan dicoba lagi.', 'error')
+        }
+      })
       return true
     },
-    [parserExtras, showToast, transferMoney]
+    [parserExtras, showToast, transferMoney, wallets]
   )
 
   const deleteTransaction = useCallback(

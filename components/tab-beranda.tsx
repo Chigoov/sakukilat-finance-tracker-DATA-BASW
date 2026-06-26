@@ -5,13 +5,11 @@ import { Eye, EyeOff, TrendingUp, TrendingDown, Zap } from 'lucide-react'
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts'
 import {
   useAuthStore,
-  useCustomizationStore,
   usePreferenceStore,
   useTransactionActions,
   useTransactionData,
   useTransactionStatus,
 } from '@/lib/store'
-import { SmartInput } from '@/components/smart-input'
 import { TransactionList } from '@/components/transaction-list'
 import { FilterTabs, type FilterTab } from '@/components/filter-tabs'
 import { BudgetCard } from '@/components/budget-card'
@@ -78,9 +76,8 @@ function DonutCenter({ cx, cy, total, zen }: DonutCenterProps) {
 export const TabBeranda = memo(function TabBeranda() {
   const { user } = useAuthStore()
   const { transactions } = useTransactionData()
-  const { addTransaction, deleteTransaction } = useTransactionActions()
-  const { newTransactionId, isSubmitting } = useTransactionStatus()
-  const { parserExtras } = useCustomizationStore()
+  const { deleteTransaction } = useTransactionActions()
+  const { newTransactionId } = useTransactionStatus()
   const { zenMode, toggleZen } = usePreferenceStore()
 
   const [activeFilter, setActiveFilter] = useState<FilterTab>('semua')
@@ -135,12 +132,6 @@ export const TabBeranda = memo(function TabBeranda() {
             {user ? getGreeting(user.givenName, hour) : 'SakuKilat'}
           </h1>
         </div>
-        <SmartInput
-          onSubmit={addTransaction}
-          isSubmitting={isSubmitting}
-          parserExtras={parserExtras}
-          className="max-w-md"
-        />
         <button
           onClick={toggleZen}
           aria-label={zenMode ? 'Matikan Zen Mode' : 'Aktifkan Zen Mode'}
@@ -337,7 +328,7 @@ export const TabBeranda = memo(function TabBeranda() {
         <div className="sticky top-0 z-20 bg-[#0B0F19]/90 backdrop-blur-xl px-4 md:px-0 py-3 border-b border-[var(--sk-border)]">
           <FilterTabs active={activeFilter} onChange={setActiveFilter} counts={filterCounts} />
         </div>
-        <div className="pt-3 pb-[112px] md:pb-4">
+        <div className="pt-3 pb-4">
           <TransactionList
             transactions={filteredTransactions}
             onDelete={deleteTransaction}
@@ -346,16 +337,6 @@ export const TabBeranda = memo(function TabBeranda() {
         </div>
       </section>
 
-      {/* ── Mobile docked input ── */}
-      <div className="fixed bottom-[60px] left-0 right-0 z-30 sk-glass border-t border-[var(--sk-border-2)] safe-bottom md:hidden">
-        <div className="px-4 py-3">
-          <SmartInput
-            onSubmit={addTransaction}
-            isSubmitting={isSubmitting}
-            parserExtras={parserExtras}
-          />
-        </div>
-      </div>
     </div>
   )
 })

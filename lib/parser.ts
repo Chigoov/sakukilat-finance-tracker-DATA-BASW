@@ -48,6 +48,7 @@ export interface ParsedTransaction {
   paymentMethod: string // built-in PaymentMethod id OR a custom payment id
   rawInput: string
   confidence: number // 0-1
+  warning?: string
 }
 
 export interface ParsedTransfer {
@@ -58,6 +59,7 @@ export interface ParsedTransfer {
   toWalletId: string
   rawInput: string
   confidence: number
+  warning?: string
 }
 
 export interface ParsedSaving {
@@ -68,6 +70,7 @@ export interface ParsedSaving {
   toWalletId: string
   rawInput: string
   confidence: number
+  warning?: string
 }
 
 export type ParsedEntry = ParsedTransaction | ParsedTransfer | ParsedSaving
@@ -89,6 +92,7 @@ export interface CustomCategory {
 export interface ParserExtras {
   payments?: CustomPayment[]
   categories?: CustomCategory[]
+  lastActiveWalletId?: string
 }
 
 // ── Payment method keywords ──────────────────────────────────────────────────
@@ -220,9 +224,25 @@ const CATEGORY_KEYWORDS: Record<Category, string[]> = {
  *   - Mixed "1.500.000" → 1500000 (multiple dots → all are thousands seps)
  *   - Standard decimal "18.5" / "1,5" → kept as-is
  */
-function normalizeNumberString(raw: string): number | null {
+function normalizeNumberString(raw: string, mode: 'plain' | 'suffix' = 'suffix'): number | null {
   const s = raw.trim().replace(/\s+/g, '')
   if (!/^\d+(?:[.,]\d+)*$/.test(s)) return null
+
+  if (mode === 'plain') {
+    const separatorCount = (s.match(/[.,]/g) || []).length
+    if (separatorCount === 0) {
+      const value = Number(s)
+      return Number.isFinite(value) ? value : null
+    }
+
+    const compact = s.replace(/[.,]/g, '')
+    if (!/^\d+$/.test(compact)) return null
+
+    const compactValue = Number(compact)
+    if (!Number.isFinite(compactValue)) return null
+
+    return compactValue < 1_000 ? compactValue * 100 : compactValue
+  }
 
   {
     const dotCount = (s.match(/\./g) || []).length
@@ -303,7 +323,7 @@ function parseAmountToken(token: string): number | null {
   const suffixMatch = t.match(suffixPattern)
 
   if (suffixMatch) {
-    const numPart = normalizeNumberString(suffixMatch[1])
+    const numPart = normalizeNumberString(suffixMatch[1], 'suffix')
     const suffix  = suffixMatch[2]
     if (numPart === null) return null
     return numPart * AMOUNT_SUFFIX_MULTIPLIERS[suffix]
@@ -311,7 +331,7 @@ function parseAmountToken(token: string): number | null {
 
   // plain numeric token (digits, dots, commas only)
   if (/^[\d.,]+$/.test(t)) {
-    const val = normalizeNumberString(t)
+    const val = normalizeNumberString(t, 'plain')
     return val === null ? null : val
   }
 
@@ -323,7 +343,7 @@ function parseSplitSuffixAmount(tokens: string[], suffixIndex: number): { amount
   const multiplier = AMOUNT_SUFFIX_MULTIPLIERS[suffix]
   if (!multiplier || suffixIndex === 0) return null
 
-  const numeric = normalizeNumberString(normalizeToken(tokens[suffixIndex - 1]))
+  const numeric = normalizeNumberString(normalizeToken(tokens[suffixIndex - 1]), 'suffix')
   if (numeric === null) return null
 
   return { amount: numeric * multiplier, indexes: new Set([suffixIndex - 1, suffixIndex]) }
@@ -333,6 +353,13 @@ function parseAmountEndingAt(tokens: string[], index: number): { amount: number;
   const direct = parseAmountToken(tokens[index])
   if (direct !== null) return { amount: direct, indexes: new Set([index]) }
   return parseSplitSuffixAmount(tokens, index)
+}
+
+function amountWarning(tokens: string[], indexes: Set<number>, amount: number): string | undefined {
+  if (amount >= 1_000 || indexes.size !== 1) return undefined
+  const [index] = Array.from(indexes)
+  const token = normalizeToken(tokens[index]).replace(/^(rp|idr)(?=\d)/, '')
+  return /^\d+$/.test(token) ? 'Nominal di bawah Rp1.000?' : undefined
 }
 
 // ── Detect payment method ────────────────────────────────────────────────────
@@ -386,10 +413,6 @@ function isCurrencyToken(token: string): boolean {
   return CURRENCY_TOKENS.has(normalizeToken(token))
 }
 
-function trailingPaymentTokens(tokens: string[], amountEndIndex: number, extras?: ParserExtras): string[] {
-  return tokens.slice(amountEndIndex + 1).filter(token => isPaymentToken(token, extras))
-}
-
 function findTrailingAmount(tokens: string[], extras?: ParserExtras): { amount: number; indexes: Set<number> } | null {
   let amountEndIndex = tokens.length - 1
 
@@ -439,16 +462,17 @@ function parseTransferCommand(input: string, extras?: ParserExtras): ParsedTrans
   const keIndex = normalized.findIndex((token, index) => token === 'ke' && index !== 0)
   if (keIndex === -1) return null
 
-  const sourceTokens =
+  const tokensBetweenAmountAndTarget =
     keIndex > amount.endIndex
       ? tokens.slice(amount.endIndex + 1, keIndex)
-      : tokens.slice(0, keIndex).filter((_, index) => index < amount.startIndex || index > amount.endIndex)
-  const destinationTokens =
-    keIndex > amount.endIndex
-      ? tokens.slice(keIndex + 1)
-      : tokens.slice(keIndex + 1, amount.startIndex)
+      : []
+  const tokensBeforeAmount = tokens
+    .slice(0, amount.startIndex)
+    .filter(token => !['pindah', 'transfer', 'kirim', 'topup', 'tf'].includes(normalizeToken(token)))
+  const sourceTokens = tokensBetweenAmountAndTarget.length > 0 ? tokensBetweenAmountAndTarget : tokensBeforeAmount
+  const destinationTokens = tokens.slice(keIndex + 1)
 
-  const fromWalletId = detectExplicitPaymentMethod(sourceTokens, extras)
+  const fromWalletId = detectExplicitPaymentMethod(sourceTokens, extras) ?? extras?.lastActiveWalletId ?? 'tunai'
   const toWalletId = detectExplicitPaymentMethod(destinationTokens, extras)
 
   if (!fromWalletId || !toWalletId || fromWalletId === toWalletId) return null
@@ -461,6 +485,7 @@ function parseTransferCommand(input: string, extras?: ParserExtras): ParsedTrans
     toWalletId,
     rawInput: trimmed,
     confidence: 0.95,
+    warning: amountWarning(tokens, amount.indexes, amount.amount),
   }
 }
 
@@ -495,6 +520,7 @@ function parseSavingCommand(input: string, extras?: ParserExtras): ParsedSaving 
     toWalletId,
     rawInput: trimmed,
     confidence: 0.9,
+    warning: amountWarning(tokens, amount.indexes, amount.amount),
   }
 }
 
@@ -551,11 +577,10 @@ export function parseTransaction(input: string, extras?: ParserExtras): ParsedTr
   if (!trailingAmount) return null
 
   const { amount, indexes: amountIndexes } = trailingAmount
-  const amountEndIndex = Math.max(...amountIndexes)
-  const paymentTokens = trailingPaymentTokens(tokens, amountEndIndex, extras)
+  const paymentTokens = tokens.filter(token => isPaymentToken(token, extras))
 
   // ── Step 2: Detect payment method ───────────────────────────────────────
-  const paymentMethod = paymentTokens.length > 0 ? detectPaymentMethod(paymentTokens, extras) : 'tunai'
+  const paymentMethod = paymentTokens.length > 0 ? detectPaymentMethod(tokens, extras) : 'tunai'
 
   // ── Step 3: Build description ────────────────────────────────────────────
   // Include only tokens that are:
@@ -566,7 +591,7 @@ export function parseTransaction(input: string, extras?: ParserExtras): ParsedTr
   const descTokens = tokens.filter((t, i) => {
     if (amountIndexes.has(i)) return false
     if (isCurrencyToken(t)) return false
-    if (i > amountEndIndex && isPaymentToken(t, extras)) return false
+    if (isPaymentToken(t, extras)) return false
     return true
   })
 
@@ -594,6 +619,7 @@ export function parseTransaction(input: string, extras?: ParserExtras): ParsedTr
     paymentMethod,
     rawInput: trimmed,
     confidence,
+    warning: amountWarning(tokens, amountIndexes, amount),
   }
 }
 

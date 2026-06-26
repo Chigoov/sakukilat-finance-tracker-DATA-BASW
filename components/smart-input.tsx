@@ -16,6 +16,7 @@ interface ParsePreview {
   fromWalletId?: string
   toWalletId?: string
   confidence: number
+  warning?: string
 }
 
 const EXAMPLE_HINTS = [
@@ -30,7 +31,7 @@ const EXAMPLE_HINTS = [
 ]
 
 interface SmartInputProps {
-  onSubmit: (input: string) => void
+  onSubmit: (input: string) => boolean | void | Promise<boolean | void>
   isSubmitting?: boolean
   className?: string
   parserExtras?: ParserExtras
@@ -42,7 +43,9 @@ export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, au
   const [preview, setPreview] = useState<ParsePreview | null>(null)
   const [focused, setFocused] = useState(false)
   const [hintIndex, setHintIndex] = useState(0)
+  const [localSubmitting, setLocalSubmitting] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  const locked = Boolean(isSubmitting || localSubmitting)
 
   // Cycle through example hints
   useEffect(() => {
@@ -73,6 +76,7 @@ export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, au
           fromWalletId: parsed.fromWalletId,
           toWalletId: parsed.toWalletId,
           confidence: parsed.confidence,
+          warning: parsed.warning,
         })
       } else {
         setPreview({
@@ -83,6 +87,7 @@ export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, au
           category: parsed.category,
           paymentMethod: parsed.paymentMethod,
           confidence: parsed.confidence,
+          warning: parsed.warning,
         })
       }
     } else {
@@ -90,14 +95,22 @@ export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, au
     }
   }, [value, parserExtras])
 
-  const handleSubmit = useCallback(() => {
+  const handleSubmit = useCallback(async () => {
     const trimmed = value.trim()
-    if (!trimmed || isSubmitting) return
-    onSubmit(trimmed)
-    setValue('')
-    setPreview(null)
-    inputRef.current?.focus()
-  }, [value, isSubmitting, onSubmit])
+    if (!trimmed || locked) return
+
+    setLocalSubmitting(true)
+    try {
+      const ok = await Promise.resolve(onSubmit(trimmed))
+      if (ok !== false) {
+        setValue('')
+        setPreview(null)
+      }
+    } finally {
+      setLocalSubmitting(false)
+      requestAnimationFrame(() => inputRef.current?.focus())
+    }
+  }, [value, locked, onSubmit])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -134,6 +147,11 @@ export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, au
               <span className="text-xs text-[var(--sk-text-muted)] mr-1.5 capitalize truncate">
                 {preview.description}
               </span>
+              {preview.warning && (
+                <span className="text-[10px] text-[var(--sk-amber)] mr-1.5">
+                  {preview.warning}
+                </span>
+              )}
               <span className="text-[var(--sk-text-dim)] text-xs">·</span>
               <span className="text-xs text-[var(--sk-text-muted)] mx-1.5 capitalize">
                 {preview.kind === 'transaction'
@@ -191,6 +209,7 @@ export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, au
           value={value}
           onChange={e => setValue(e.target.value)}
           onKeyDown={handleKeyDown}
+          disabled={locked}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
           placeholder={`cth. "${EXAMPLE_HINTS[hintIndex]}"`}
@@ -203,7 +222,7 @@ export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, au
           className={cn(
             'flex-1 min-w-0 bg-transparent outline-none border-none',
             'text-sm text-[var(--sk-text)] placeholder:text-[var(--sk-text-dim)]',
-            'caret-[var(--sk-cyan)]'
+            'caret-[var(--sk-cyan)] disabled:cursor-not-allowed disabled:opacity-60'
           )}
         />
 
@@ -212,6 +231,7 @@ export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, au
           <button
             type="button"
             onClick={() => { setValue(''); setPreview(null); inputRef.current?.focus() }}
+            disabled={locked}
             className="text-[var(--sk-text-dim)] hover:text-[var(--sk-text-muted)] flex-shrink-0"
             aria-label="Bersihkan input"
           >
@@ -222,16 +242,16 @@ export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, au
         <button
           type="button"
           onClick={handleSubmit}
-          disabled={!value.trim() || isSubmitting}
+          disabled={!value.trim() || locked}
           aria-label="Tambah transaksi"
           className={cn(
             'flex-shrink-0 w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-200',
-            value.trim() && !isSubmitting
+            value.trim() && !locked
               ? 'bg-[var(--sk-cyan)] text-[#0B0F19] shadow-[0_0_12px_var(--sk-cyan-glow)] hover:opacity-90 active:scale-95'
               : 'bg-[var(--sk-surface-3)] text-[var(--sk-text-dim)]'
           )}
         >
-          {isSubmitting ? (
+          {locked ? (
             <Loader2 className="w-4 h-4 animate-spin" />
           ) : (
             <SendHorizonal className="w-4 h-4" />

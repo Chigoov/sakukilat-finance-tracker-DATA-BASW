@@ -3,8 +3,15 @@
 import { useState } from 'react'
 import { Home, BarChart2, Wallet, User } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { useAuthStore, useFeedbackStore } from '@/lib/store'
+import {
+  useAuthStore,
+  useCustomizationStore,
+  useFeedbackStore,
+  useTransactionActions,
+  useTransactionStatus,
+} from '@/lib/store'
 import { AuthGate } from '@/components/auth-gate'
+import { SmartInput } from '@/components/smart-input'
 import { TabBeranda } from '@/components/tab-beranda'
 import { TabRekapan } from '@/components/tab-rekapan'
 import { TabSaku } from '@/components/tab-saku'
@@ -22,6 +29,9 @@ const TABS: { id: Tab; label: string; icon: React.ComponentType<{ className?: st
 function AppShell() {
   const { user, authReady } = useAuthStore()
   const { toast } = useFeedbackStore()
+  const { addTransaction } = useTransactionActions()
+  const { isSubmitting } = useTransactionStatus()
+  const { parserExtras } = useCustomizationStore()
   const [activeTab, setActiveTab] = useState<Tab>('beranda')
 
   // Loading splash
@@ -43,12 +53,22 @@ function AppShell() {
   return (
     <div className="min-h-[100dvh] bg-[var(--sk-bg)] flex flex-col">
       {/* ── Tab content area ── */}
-      <main className="flex-1 overflow-y-auto pb-[68px] md:pb-0 md:mb-0">
+      <main className="flex-1 overflow-y-auto pb-[176px] md:pb-[124px] md:mb-0">
         {activeTab === 'beranda' && <TabBeranda />}
         {activeTab === 'saku'    && <TabSaku />}
         {activeTab === 'rekapan' && <TabRekapan />}
         {activeTab === 'profil'  && <TabProfil />}
       </main>
+
+      <div className="fixed bottom-[60px] left-0 right-0 z-30 sk-glass border-t border-[var(--sk-border-2)] safe-bottom md:bottom-5 md:left-[96px] md:right-6 md:max-w-2xl md:border md:rounded-2xl md:shadow-2xl">
+        <div className="px-4 py-3 md:px-4">
+          <SmartInput
+            onSubmit={addTransaction}
+            isSubmitting={isSubmitting}
+            parserExtras={parserExtras}
+          />
+        </div>
+      </div>
 
       {/* ── Mobile bottom nav ── */}
       <nav
@@ -122,7 +142,7 @@ function AppShell() {
         <div
           role="status"
           aria-live="polite"
-          className="fixed z-50 animate-slide-up bottom-[78px] left-4 right-4 md:bottom-6 md:left-auto md:right-6 md:w-auto"
+          className="fixed z-50 animate-slide-up bottom-[176px] left-4 right-4 md:bottom-[104px] md:left-auto md:right-6 md:w-auto"
         >
           <div
             className={cn(

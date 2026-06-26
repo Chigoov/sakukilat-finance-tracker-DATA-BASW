@@ -5,5 +5,7 @@ overrides:
   hono: 4.12.25
 
 allowBuilds:
+  '@firebase/util': true
   msw: false
+  protobufjs: true
   sharp: false
