@@ -152,6 +152,22 @@ const INCOME_KEYWORDS = [
   'refund', 'cashback', 'hadiah', 'thr', 'freelance',
 ]
 
+// ── Kata pengisi di awal deskripsi ───────────────────────────────────────────
+// Kata kerja transaksi generik yang tidak menambah makna pada deskripsi item.
+// Dibuang HANYA dari awal deskripsi (mis. "bayar bakso" → "bakso"), tidak pernah
+// sampai mengosongkan deskripsi.
+const LEADING_FILLER_WORDS = new Set([
+  'bayar', 'bayarin', 'beli', 'beliin', 'buat', 'utk', 'untuk', 'pesan', 'order',
+])
+
+// ── Konektor multi-item ──────────────────────────────────────────────────────
+// Pemisah antar-transaksi pada input gabungan seperti
+// "kopi 18k spay sama parkir 2rb tunai". Dicocokkan sebagai kata utuh agar
+// "sama" di tengah deskripsi ("nasi sama telur") tidak salah dipotong — keputusan
+// final pemisahan tetap divalidasi oleh splitEntries (tiap sisi wajib punya nominal).
+const SEGMENT_SEPARATOR_PATTERN =
+  /\s*(?:,|;|\+|&|\bdan\b|\bsama\b|\blalu\b|\bterus\b|\bkemudian\b)\s*/i
+
 // ── Category keyword map ─────────────────────────────────────────────────────
 // Keywords are matched as whole words against the lowercased description
 // (using a word-boundary aware check), preventing partial false-matches.
@@ -583,7 +599,10 @@ export function parseTransaction(input: string, extras?: ParserExtras): ParsedTr
   // Scanning from the end is more robust: in "ongkir grab 38k ovo",
   // the amount always comes just before the payment method.
   const trailingAmount = findTrailingAmount(tokens, extras)
-  const parsedAmount = trailingAmount ?? (type === 'income' ? findAnyAmount(tokens) : null)
+  // PATCH: pengeluaran kini juga jatuh kembali ke findAnyAmount, sehingga sintaks
+  // terbalik di mana nominal mendahului item ("15rb bakso", "jajan 2.5k seblak")
+  // tetap tertangkap, bukan ditolak menjadi null.
+  const parsedAmount = trailingAmount ?? findAnyAmount(tokens)
   if (!parsedAmount) return null
 
   const { amount, indexes: amountIndexes } = parsedAmount
@@ -602,13 +621,19 @@ export function parseTransaction(input: string, extras?: ParserExtras): ParsedTr
   //   - NOT a payment method token (by value)
   // This ensures "ongkir grab stasiun tawang 38k ovo" →
   // description = "ongkir grab stasiun tawang"
-  const descTokens = tokens.filter((t, i) => {
+  let descTokens = tokens.filter((t, i) => {
     if (amountIndexes.has(i)) return false
     if (isCurrencyToken(t)) return false
     if (isPaymentToken(t, extras)) return false
     if (type === 'income' && INCOME_KEYWORDS.includes(normalizeToken(t))) return false
     return true
   })
+
+  // PATCH: buang kata kerja pengisi di awal deskripsi ("bayar bakso" → "bakso"),
+  // tetapi jangan pernah sampai mengosongkan deskripsi (sisakan minimal satu kata).
+  while (descTokens.length > 1 && LEADING_FILLER_WORDS.has(normalizeToken(descTokens[0]))) {
+    descTokens = descTokens.slice(1)
+  }
 
   const description = descTokens.join(' ').trim() || (type === 'income' ? 'Pemasukan' : 'Transaksi')
 
@@ -640,12 +665,82 @@ export function parseTransaction(input: string, extras?: ParserExtras): ParsedTr
   }
 }
 
+// ── Segmentasi multi-item ─────────────────────────────────────────────────────
+/**
+ * Mengecek apakah sepotong teks mengandung minimal satu token nominal valid.
+ * Dipakai untuk memvalidasi batas pemisahan multi-item.
+ */
+function hasAmountInText(text: string): boolean {
+  const tokens = text.trim().split(/\s+/).filter(Boolean)
+  return tokens.length > 0 && findAnyAmount(tokens) !== null
+}
+
+/**
+ * Memecah satu input gabungan menjadi beberapa segmen transaksi.
+ * Contoh: "kopi 18k spay sama parkir 2rb tunai" → ["kopi 18k spay", "parkir 2rb tunai"].
+ *
+ * Aturan anti salah-potong: sebuah konektor hanya menjadi batas segmen apabila
+ * kedua sisinya sama-sama memiliki nominal. Jika sebuah potongan tidak punya
+ * nominal (mis. "nasi" pada "nasi sama telur 15k"), potongan itu digabung kembali
+ * dengan tetangganya sehingga tetap menjadi SATU transaksi.
+ *
+ * Selalu mengembalikan minimal satu segmen (input asli) bila tak ada pemisahan.
+ */
+export function splitEntries(input: string): string[] {
+  const trimmed = input.trim()
+  if (!trimmed) return []
+
+  const rawPieces = trimmed
+    .split(SEGMENT_SEPARATOR_PATTERN)
+    .map(piece => piece.trim())
+    .filter(Boolean)
+
+  if (rawPieces.length <= 1) return [trimmed]
+
+  const segments: string[] = []
+  let buffer: string[] = []
+
+  for (const piece of rawPieces) {
+    buffer.push(piece)
+    const joined = buffer.join(' ')
+    // Flush hanya ketika buffer sudah membentuk transaksi bernominal utuh.
+    if (hasAmountInText(joined)) {
+      segments.push(joined)
+      buffer = []
+    }
+  }
+
+  // Sisa buffer tanpa nominal digabung ke segmen terakhir (atau jadi satu-satunya).
+  if (buffer.length > 0) {
+    const leftover = buffer.join(' ')
+    if (segments.length > 0) {
+      segments[segments.length - 1] = `${segments[segments.length - 1]} ${leftover}`
+    } else {
+      segments.push(leftover)
+    }
+  }
+
+  return segments.length > 0 ? segments : [trimmed]
+}
+
+// ── Parser entri tunggal ──────────────────────────────────────────────────────
 export function parseEntry(input: string, extras?: ParserExtras): ParsedEntry | null {
   return (
     parseTransferCommand(input, extras) ??
     parseSavingCommand(input, extras) ??
     parseTransaction(input, extras)
   )
+}
+
+/**
+ * Parser entri JAMAK — memecah input multi-item lalu mem-parse tiap segmen.
+ * Mengembalikan hanya segmen yang berhasil di-parse menjadi entri valid.
+ * Untuk input tunggal, hasilnya array berisi satu entri (atau kosong bila gagal).
+ */
+export function parseEntries(input: string, extras?: ParserExtras): ParsedEntry[] {
+  return splitEntries(input)
+    .map(segment => parseEntry(segment, extras))
+    .filter((entry): entry is ParsedEntry => entry !== null && entry.amount > 0)
 }
 
 // ── Format currency (IDR) ────────────────────────────────────────────────────
