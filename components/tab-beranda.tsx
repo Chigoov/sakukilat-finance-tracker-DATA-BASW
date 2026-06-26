@@ -247,11 +247,11 @@ export const TabBeranda = memo(function TabBeranda() {
 
       {/* ── Balance + Donut card ── */}
       <section className="px-4 md:px-8 pb-4">
-        <div className="rounded-2xl bg-[var(--sk-surface)] border border-[var(--sk-border)] p-5 overflow-hidden relative">
+        <div className="rounded-2xl bg-[var(--sk-surface)] border border-[var(--sk-border)] p-5 relative isolate">
           {/* ambient glow */}
           <div
             aria-hidden
-            className="pointer-events-none absolute -top-10 right-0 w-48 h-48 rounded-full blur-3xl"
+            className="pointer-events-none absolute -top-10 right-0 w-40 h-40 sm:w-48 sm:h-48 rounded-full blur-2xl opacity-70"
             style={{ background: 'radial-gradient(circle, rgba(56,189,248,0.07) 0%, transparent 70%)' }}
           />
           <div className="relative z-10 flex flex-wrap items-center justify-between gap-4">
