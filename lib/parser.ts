@@ -147,8 +147,8 @@ function wordMatch(str: string, kw: string): boolean {
 
 // ── Income keywords ──────────────────────────────────────────────────────────
 const INCOME_KEYWORDS = [
-  'gaji', 'salary', 'terima', 'dapat', 'pemasukan', 'income',
-  'bonus', 'komisi', 'dividen', 'honor', 'fee', 'jual',
+  'gaji', 'salary', 'terima', 'dapat', 'masuk', 'pemasukan', 'pendapatan', 'income',
+  'bonus', 'komisi', 'dividen', 'honor', 'fee', 'bayaran', 'dibayar', 'jual',
   'refund', 'cashback', 'hadiah', 'thr', 'freelance',
 ]
 
@@ -580,7 +580,7 @@ export function parseTransaction(input: string, extras?: ParserExtras): ParsedTr
   const paymentTokens = tokens.filter(token => isPaymentToken(token, extras))
 
   // ── Step 2: Detect payment method ───────────────────────────────────────
-  const paymentMethod = paymentTokens.length > 0 ? detectPaymentMethod(tokens, extras) : 'tunai'
+  let paymentMethod = paymentTokens.length > 0 ? detectPaymentMethod(tokens, extras) : 'tunai'
 
   // ── Step 3: Build description ────────────────────────────────────────────
   // Include only tokens that are:
@@ -599,6 +599,9 @@ export function parseTransaction(input: string, extras?: ParserExtras): ParsedTr
 
   // ── Step 4: Classify ─────────────────────────────────────────────────────
   const type     = detectType(trimmed)
+  if (type === 'income' && paymentMethod === 'transfer') {
+    paymentMethod = extras?.lastActiveWalletId ?? 'bca'
+  }
   const category = detectCategory(description, type, extras)
 
   // ── Step 5: Confidence score ─────────────────────────────────────────────

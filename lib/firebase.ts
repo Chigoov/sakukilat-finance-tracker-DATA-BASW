@@ -1,7 +1,6 @@
 'use client'
 
 import { getApp, getApps, initializeApp } from 'firebase/app'
-import { getAnalytics, isSupported } from 'firebase/analytics'
 import { getAuth, GoogleAuthProvider } from 'firebase/auth'
 
 const firebaseConfig = {
@@ -24,6 +23,13 @@ googleProvider.setCustomParameters({
 
 export async function initFirebaseAnalytics() {
   if (typeof window === 'undefined') return null
-  const supported = await isSupported()
-  return supported ? getAnalytics(firebaseApp) : null
+
+  try {
+    const { getAnalytics, isSupported } = await import('firebase/analytics')
+    const supported = await isSupported()
+    return supported ? getAnalytics(firebaseApp) : null
+  } catch (error) {
+    console.warn('Firebase analytics is not available:', error)
+    return null
+  }
 }

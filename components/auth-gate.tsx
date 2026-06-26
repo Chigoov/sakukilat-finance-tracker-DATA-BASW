@@ -66,7 +66,7 @@ export function AuthGate() {
           {loading ? (
             <>
               <Loader2 className="w-5 h-5 animate-spin" />
-              Menghubungkan…
+              Menghubungkan...
             </>
           ) : (
             <>
@@ -86,13 +86,13 @@ export function AuthGate() {
         <div className="mt-12 flex items-center gap-2.5 px-4 py-2.5 rounded-full bg-[var(--sk-surface)] border border-[var(--sk-border)] text-[var(--sk-text-muted)]">
           <Sparkles className="w-3.5 h-3.5 text-[var(--sk-cyan)]" />
           <span className="text-xs">
-            Ketik <span className="text-[var(--sk-text)] font-medium">&quot;kopi 18k gopay&quot;</span> — beres.
+            Ketik <span className="text-[var(--sk-text)] font-medium">&quot;kopi 18k gopay&quot;</span> - beres.
           </span>
         </div>
       </div>
 
       <footer className="absolute bottom-7 text-[11px] text-[var(--sk-text-dim)]">
-        SakuKilat v2.0 — dibuat untuk ketenangan finansialmu
+        SakuKilat v2.0 - dibuat untuk ketenangan finansialmu
       </footer>
     </main>
   )

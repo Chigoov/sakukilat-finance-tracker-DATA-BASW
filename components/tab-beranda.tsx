@@ -73,6 +73,37 @@ function DonutCenter({ cx, cy, total, zen }: DonutCenterProps) {
   )
 }
 
+function useClientDateInfo() {
+  const [dateInfo, setDateInfo] = useState({
+    period: 'Bulan ini',
+    fullDate: 'Hari ini',
+    monthProgress: '',
+  })
+
+  useEffect(() => {
+    const syncDate = () => {
+      const now = new Date()
+      const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
+      setDateInfo({
+        period: new Intl.DateTimeFormat('id-ID', { month: 'long', year: 'numeric' }).format(now),
+        fullDate: new Intl.DateTimeFormat('id-ID', {
+          weekday: 'long',
+          day: 'numeric',
+          month: 'long',
+          year: 'numeric',
+        }).format(now),
+        monthProgress: `Hari ke-${now.getDate()} dari ${daysInMonth}`,
+      })
+    }
+
+    syncDate()
+    const intervalId = window.setInterval(syncDate, 60_000)
+    return () => window.clearInterval(intervalId)
+  }, [])
+
+  return dateInfo
+}
+
 export const TabBeranda = memo(function TabBeranda() {
   const { user } = useAuthStore()
   const { transactions } = useTransactionData()
@@ -82,10 +113,7 @@ export const TabBeranda = memo(function TabBeranda() {
 
   const [activeFilter, setActiveFilter] = useState<FilterTab>('semua')
   const hour = useClientHour()
-
-  const period = useMemo(() =>
-    new Intl.DateTimeFormat('id-ID', { month: 'long', year: 'numeric' }).format(new Date()),
-  [])
+  const { period, fullDate, monthProgress } = useClientDateInfo()
 
   const { income, expense, balance } = useMemo(
     () => monthlyTotals(transactions),
@@ -120,6 +148,8 @@ export const TabBeranda = memo(function TabBeranda() {
 
   const savingsRate = income > 0 ? Math.round(((income - expense) / income) * 100) : 0
   const isEmpty = slices.length === 0
+  const topSlice = slices[0] ?? null
+  const topCategory = topSlice ? getCategoryConfig(topSlice.category) : null
 
   return (
     <div className="flex flex-col min-h-full md:ml-[72px]">
@@ -127,10 +157,11 @@ export const TabBeranda = memo(function TabBeranda() {
       {/* ── Desktop top bar ── */}
       <div className="hidden md:flex sticky top-0 z-30 bg-[#0B0F19]/80 backdrop-blur-xl border-b border-[var(--sk-border)] px-8 py-4 items-center justify-between">
         <div>
-          <p className="text-xs text-[var(--sk-text-dim)] mb-0.5">{period}</p>
+          <p className="text-xs text-[var(--sk-text-dim)] mb-0.5">{fullDate}</p>
           <h1 className="text-base font-semibold text-[var(--sk-text)]">
             {user ? getGreeting(user.givenName, hour) : 'SakuKilat'}
           </h1>
+          <p className="text-[11px] text-[var(--sk-text-dim)] mt-0.5">{monthProgress}</p>
         </div>
         <button
           onClick={toggleZen}
@@ -170,9 +201,14 @@ export const TabBeranda = memo(function TabBeranda() {
           </button>
         </div>
         {user && (
-          <p className="text-xs text-[var(--sk-text-muted)]">
-            {getGreeting(user.givenName, hour)}
-          </p>
+          <div>
+            <p className="text-xs text-[var(--sk-text-muted)]">
+              {getGreeting(user.givenName, hour)}
+            </p>
+            <p className="text-[11px] text-[var(--sk-text-dim)] mt-0.5">
+              {fullDate} · {monthProgress}
+            </p>
+          </div>
         )}
       </header>
 
@@ -242,20 +278,22 @@ export const TabBeranda = memo(function TabBeranda() {
             </div>
 
             {/* Right: Donut chart */}
-            <div className={cn('w-24 h-24 md:w-[120px] md:h-[120px] flex-shrink-0 relative', zenMode && 'sk-zen-blur')}>
+            <div className={cn('w-32 md:w-36 flex-shrink-0 relative flex flex-col items-center', zenMode && 'sk-zen-blur')}>
               {isEmpty ? (
-                <div className="w-full h-full rounded-full border-4 border-dashed border-[var(--sk-border-2)] flex items-center justify-center">
+                <div className="w-28 h-28 md:w-32 md:h-32 rounded-full border-4 border-dashed border-[var(--sk-border-2)] flex items-center justify-center">
                   <span className="text-[10px] text-[var(--sk-text-dim)] text-center leading-tight">Belum<br/>ada data</span>
                 </div>
               ) : (
+                <>
+                <div className="w-28 h-28 md:w-32 md:h-32">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
                       data={chartData}
                       cx="50%"
                       cy="50%"
-                      innerRadius="34%"
-                      outerRadius="48%"
+                      innerRadius="52%"
+                      outerRadius="78%"
                       paddingAngle={2}
                       dataKey="total"
                       labelLine={false}
@@ -268,29 +306,40 @@ export const TabBeranda = memo(function TabBeranda() {
                         />
                       ))}
                     </Pie>
-                    {/* Custom center label via customized */}
                     <text
-                      x="50%" y="44%"
+                      x="50%" y="43%"
                       textAnchor="middle"
                       fill="var(--sk-text-dim)"
-                      fontSize={8}
+                      fontSize={9}
                       fontFamily="var(--font-sans)"
                       letterSpacing="0.05em"
                     >
-                      KELUAR
+                      TOP
                     </text>
                     <text
-                      x="50%" y="62%"
+                      x="50%" y="61%"
                       textAnchor="middle"
                       fill="var(--sk-text)"
-                      fontSize={11}
+                      fontSize={18}
                       fontWeight="700"
                       fontFamily="var(--font-sans)"
                     >
-                      {formatIDRCompact(expense)}
+                      {topSlice ? `${Math.round(topSlice.pct * 100)}%` : '0%'}
                     </text>
                   </PieChart>
                 </ResponsiveContainer>
+                </div>
+                {topSlice && topCategory && (
+                  <div className="mt-1 text-center max-w-full">
+                    <p className="text-[11px] font-medium text-[var(--sk-text-muted)] truncate">
+                      {topCategory.label}
+                    </p>
+                    <p className="text-[11px] font-bold tabular-nums text-[var(--sk-red)]">
+                      {formatIDRCompact(topSlice.total)}
+                    </p>
+                  </div>
+                )}
+                </>
               )}
             </div>
           </div>

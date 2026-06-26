@@ -21,7 +21,8 @@ interface ParsePreview {
 
 const EXAMPLE_HINTS = [
   'makan soto 25k gopay',
-  'terima gaji 5jt transfer',
+  'gaji 5jt bca',
+  'bonus 500k gopay',
   'bensin 50rb tunai',
   'bayar listrik 200rb bca',
   'kopi 18.500 ovo',

@@ -342,7 +342,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       showToast('Login Google berhasil. Saku siap dipakai.', 'success')
     } catch (error) {
       console.error('Firebase Google sign-in failed:', error)
-      showToast('Login Google gagal. Coba lagi sebentar.', 'error')
+      showToast('Login Google gagal. Izinkan popup lalu coba lagi.', 'error')
       throw error
     }
   }, [showToast])

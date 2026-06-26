@@ -11,11 +11,12 @@ import { TransactionItem } from '@/components/transaction-item'
 import { TransactionList } from '@/components/transaction-list'
 import {
   dailyAggregates, transactionsForDay, trendSeries, topSavedCategory,
+  categoryBreakdown, monthlyTotals,
   type TrendRange,
 } from '@/lib/stats'
 import { formatIDRCompact, formatIDR } from '@/lib/parser'
 import { dayKey } from '@/lib/stats'
-import { getCategoryConfig } from '@/components/category-badge'
+import { getCategoryConfig, getCategoryHex } from '@/components/category-badge'
 import { cn } from '@/lib/utils'
 
 type RekapView = 'kalender' | 'tren' | 'riwayat'
@@ -255,6 +256,141 @@ function CalendarView() {
 }
 
 // ── Trend view ────────────────────────────────────────────────────────────────
+function AllocationStrip({ slices, emptyText }: { slices: ReturnType<typeof categoryBreakdown>; emptyText: string }) {
+  if (slices.length === 0) {
+    return (
+      <div className="h-2 rounded-full bg-[var(--sk-surface-3)]" aria-label={emptyText} />
+    )
+  }
+
+  return (
+    <div className="h-2 rounded-full bg-[var(--sk-surface-3)] overflow-hidden flex">
+      {slices.map(slice => (
+        <div
+          key={slice.category}
+          className="h-full"
+          style={{
+            width: `${slice.pct * 100}%`,
+            background: getCategoryHex(slice.category),
+          }}
+        />
+      ))}
+    </div>
+  )
+}
+
+function AllocationRows({ slices, tone }: { slices: ReturnType<typeof categoryBreakdown>; tone: 'expense' | 'income' }) {
+  if (slices.length === 0) {
+    return (
+      <p className="text-xs text-[var(--sk-text-dim)] py-2">
+        Belum ada {tone === 'expense' ? 'pengeluaran' : 'pemasukan'} di bulan ini.
+      </p>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      {slices.slice(0, 5).map(slice => {
+        const conf = getCategoryConfig(slice.category)
+        return (
+          <div key={slice.category} className="flex items-center gap-2">
+            <span
+              className="w-2 h-2 rounded-full flex-shrink-0"
+              style={{ background: getCategoryHex(slice.category) }}
+            />
+            <span className="text-xs text-[var(--sk-text-muted)] truncate">{conf.label}</span>
+            <span className="ml-auto text-xs font-semibold tabular-nums text-[var(--sk-text)]">
+              {formatIDRCompact(slice.total)}
+            </span>
+            <span className="w-9 text-right text-[10px] tabular-nums text-[var(--sk-text-dim)]">
+              {Math.round(slice.pct * 100)}%
+            </span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function MonthlyAllocationCard() {
+  const { transactions } = useTransactionData()
+  const [monthOffset, setMonthOffset] = useState(0)
+
+  const monthRef = useMemo(() => {
+    const now = new Date()
+    return new Date(now.getFullYear(), now.getMonth() + monthOffset, 1)
+  }, [monthOffset])
+
+  const monthLabel = useMemo(
+    () => new Intl.DateTimeFormat('id-ID', { month: 'long', year: 'numeric' }).format(monthRef),
+    [monthRef]
+  )
+  const totals = useMemo(() => monthlyTotals(transactions, monthRef), [transactions, monthRef])
+  const expenseSlices = useMemo(() => categoryBreakdown(transactions, monthRef, 'expense'), [transactions, monthRef])
+  const incomeSlices = useMemo(() => categoryBreakdown(transactions, monthRef, 'income'), [transactions, monthRef])
+
+  return (
+    <div className="rounded-2xl bg-[var(--sk-surface)] border border-[var(--sk-border)] p-4 mb-5">
+      <div className="flex items-center justify-between gap-3 mb-4">
+        <button
+          onClick={() => setMonthOffset(value => value - 1)}
+          aria-label="Bulan sebelumnya"
+          className="w-8 h-8 rounded-lg bg-[var(--sk-surface-2)] flex items-center justify-center text-[var(--sk-text-muted)] hover:bg-[var(--sk-surface-3)] transition-colors"
+        >
+          <ChevronLeft className="w-4 h-4" />
+        </button>
+        <div className="text-center min-w-0">
+          <p className="text-sm font-semibold text-[var(--sk-text)] truncate">{monthLabel}</p>
+          <p className="text-[10px] text-[var(--sk-text-dim)] uppercase tracking-widest">Alokasi bulanan</p>
+        </div>
+        <button
+          onClick={() => setMonthOffset(value => Math.min(0, value + 1))}
+          disabled={monthOffset === 0}
+          aria-label="Bulan berikutnya"
+          className="w-8 h-8 rounded-lg bg-[var(--sk-surface-2)] flex items-center justify-center text-[var(--sk-text-muted)] hover:bg-[var(--sk-surface-3)] transition-colors disabled:opacity-35 disabled:hover:bg-[var(--sk-surface-2)]"
+        >
+          <ChevronRight className="w-4 h-4" />
+        </button>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 mb-4">
+        <div className="rounded-xl bg-[var(--sk-surface-2)] border border-[var(--sk-border)] p-3">
+          <p className="text-[10px] text-[var(--sk-text-dim)] uppercase tracking-widest mb-1">Keluar</p>
+          <p className="text-base font-bold tabular-nums text-[var(--sk-red)]">{formatIDRCompact(totals.expense)}</p>
+        </div>
+        <div className="rounded-xl bg-[var(--sk-surface-2)] border border-[var(--sk-border)] p-3">
+          <p className="text-[10px] text-[var(--sk-text-dim)] uppercase tracking-widest mb-1">Masuk</p>
+          <p className="text-base font-bold tabular-nums text-[var(--sk-green)]">{formatIDRCompact(totals.income)}</p>
+        </div>
+      </div>
+
+      <div className="grid md:grid-cols-2 gap-4">
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs font-medium text-[var(--sk-text-muted)]">Kemana uang keluar</p>
+            <span className="text-[10px] text-[var(--sk-text-dim)]">{expenseSlices.length} kategori</span>
+          </div>
+          <AllocationStrip slices={expenseSlices} emptyText="Belum ada pengeluaran" />
+          <div className="mt-3">
+            <AllocationRows slices={expenseSlices} tone="expense" />
+          </div>
+        </div>
+
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs font-medium text-[var(--sk-text-muted)]">Dari mana uang masuk</p>
+            <span className="text-[10px] text-[var(--sk-text-dim)]">{incomeSlices.length} kategori</span>
+          </div>
+          <AllocationStrip slices={incomeSlices} emptyText="Belum ada pemasukan" />
+          <div className="mt-3">
+            <AllocationRows slices={incomeSlices} tone="income" />
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function TrenView() {
   const { transactions } = useTransactionData()
   const [range, setRange] = useState<TrendRange>('30d')
@@ -268,6 +404,8 @@ function TrenView() {
 
   return (
     <div>
+      <MonthlyAllocationCard />
+
       {/* Range selector */}
       <div className="flex gap-1.5 mb-5">
         {RANGES.map(r => (

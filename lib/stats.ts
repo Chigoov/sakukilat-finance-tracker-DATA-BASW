@@ -8,10 +8,17 @@ function isMoneyMove(t: Transaction): boolean {
   return t.kind === 'transfer' || t.kind === 'saving'
 }
 
+function monthBounds(ref: Date): { start: Date; end: Date } {
+  return {
+    start: new Date(ref.getFullYear(), ref.getMonth(), 1),
+    end: new Date(ref.getFullYear(), ref.getMonth() + 1, 1),
+  }
+}
+
 // ── Monthly totals (current calendar month) ───────────────────────────────────
 export function monthlyTotals(transactions: Transaction[], ref = new Date()) {
-  const start = new Date(ref.getFullYear(), ref.getMonth(), 1)
-  const inMonth = transactions.filter(t => t.date >= start && !isMoneyMove(t))
+  const { start, end } = monthBounds(ref)
+  const inMonth = transactions.filter(t => t.date >= start && t.date < end && !isMoneyMove(t))
   const income = inMonth.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0)
   const expense = inMonth.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0)
   return { income, expense, balance: income - expense }
@@ -23,11 +30,15 @@ export interface CategorySlice {
   total: number
   pct: number
 }
-export function categoryBreakdown(transactions: Transaction[], ref = new Date()): CategorySlice[] {
-  const start = new Date(ref.getFullYear(), ref.getMonth(), 1)
+export function categoryBreakdown(
+  transactions: Transaction[],
+  ref = new Date(),
+  type: 'expense' | 'income' = 'expense'
+): CategorySlice[] {
+  const { start, end } = monthBounds(ref)
   const map = new Map<string, number>()
   for (const t of transactions) {
-    if (isMoneyMove(t) || t.type !== 'expense' || t.date < start) continue
+    if (isMoneyMove(t) || t.type !== type || t.date < start || t.date >= end) continue
     map.set(t.category, (map.get(t.category) ?? 0) + t.amount)
   }
   const total = Array.from(map.values()).reduce((s, v) => s + v, 0)
@@ -153,11 +164,21 @@ export interface BudgetStatus {
   daysInMonth: number
   dayOfMonth: number
   remainingDays: number
+  weekOfMonth: number
+  totalWeeks: number
+  weekStartDay: number
+  weekEndDay: number
+  remainingWeekDays: number
   baseDailyBudget: number
+  baseWeeklyBudget: number
   dynamicDailyBudget: number
+  weeklySpent: number
+  weeklyRemaining: number
   todayExpense: number
   todayOverBase: boolean
+  weekOverBase: boolean
   pctUsed: number
+  pctWeekUsed: number
   roast: string | null
 }
 
@@ -179,20 +200,31 @@ export function monthlyBudgetStatus(
   const start = new Date(ref.getFullYear(), ref.getMonth(), 1)
   const tomorrow = new Date(ref.getFullYear(), ref.getMonth(), ref.getDate() + 1)
   const todayKey = dayKey(ref)
+  const weekOfMonth = Math.floor((dayOfMonth - 1) / 7) + 1
+  const totalWeeks = Math.ceil(daysInMonth / 7)
+  const weekStartDay = (weekOfMonth - 1) * 7 + 1
+  const weekEndDay = Math.min(daysInMonth, weekStartDay + 6)
+  const weekStart = new Date(ref.getFullYear(), ref.getMonth(), weekStartDay)
+  const weekEndExclusive = new Date(ref.getFullYear(), ref.getMonth(), weekEndDay + 1)
+  const remainingWeekDays = Math.max(1, weekEndDay - dayOfMonth + 1)
 
   let spent = 0
+  let weeklySpent = 0
   let todayExpense = 0
 
   for (const t of transactions) {
     if (isMoneyMove(t) || t.type !== 'expense' || t.date < start || t.date >= tomorrow) continue
     spent += t.amount
+    if (t.date >= weekStart && t.date < weekEndExclusive) weeklySpent += t.amount
     if (dayKey(t.date) === todayKey) todayExpense += t.amount
   }
 
   const safeBudget = Math.max(0, budget)
   const remaining = safeBudget - spent
   const baseDailyBudget = safeBudget / daysInMonth
-  const dynamicDailyBudget = Math.max(0, remaining / remainingDays)
+  const baseWeeklyBudget = baseDailyBudget * (weekEndDay - weekStartDay + 1)
+  const weeklyRemaining = baseWeeklyBudget - weeklySpent
+  const dynamicDailyBudget = Math.max(0, weeklyRemaining / remainingWeekDays)
   const overBudget = spent > safeBudget && safeBudget > 0
   const roastIndex = safeBudget > 0 ? Math.min(BUDGET_ROASTS.length - 1, Math.floor((spent / safeBudget - 1) * 4)) : 0
 
@@ -203,11 +235,21 @@ export function monthlyBudgetStatus(
     daysInMonth,
     dayOfMonth,
     remainingDays,
+    weekOfMonth,
+    totalWeeks,
+    weekStartDay,
+    weekEndDay,
+    remainingWeekDays,
     baseDailyBudget,
+    baseWeeklyBudget,
     dynamicDailyBudget,
+    weeklySpent,
+    weeklyRemaining,
     todayExpense,
     todayOverBase: todayExpense > baseDailyBudget && safeBudget > 0,
+    weekOverBase: weeklySpent > baseWeeklyBudget && safeBudget > 0,
     pctUsed: safeBudget > 0 ? spent / safeBudget : 0,
+    pctWeekUsed: baseWeeklyBudget > 0 ? weeklySpent / baseWeeklyBudget : 0,
     roast: overBudget ? BUDGET_ROASTS[roastIndex] : null,
   }
 }
