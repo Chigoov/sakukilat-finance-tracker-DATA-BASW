@@ -104,6 +104,18 @@ function useClientDateInfo() {
   return dateInfo
 }
 
+function localDayKey(date: Date): string {
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, '0'),
+    String(date.getDate()).padStart(2, '0'),
+  ].join('-')
+}
+
+function dayStart(date: Date, offset = 0): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + offset)
+}
+
 function PieHoverTooltip({
   active,
   payload,
@@ -142,7 +154,7 @@ function PieHoverTooltip({
 export const TabBeranda = memo(function TabBeranda() {
   const { user } = useAuthStore()
   const { transactions } = useTransactionData()
-  const { deleteTransaction } = useTransactionActions()
+  const { deleteTransaction, updateTransaction } = useTransactionActions()
   const { newTransactionId } = useTransactionStatus()
   const { zenMode, toggleZen } = usePreferenceStore()
 
@@ -180,6 +192,44 @@ export const TabBeranda = memo(function TabBeranda() {
     pengeluaran: recentTransactions.filter(t => t.type === 'expense').length,
     pemasukan: recentTransactions.filter(t => t.type === 'income').length,
   }), [recentTransactions])
+
+  const insightBar = useMemo(() => {
+    const today = dayStart(new Date())
+    const daySet = new Set(transactions.map(t => localDayKey(t.date)))
+    let streak = 0
+
+    for (let offset = 0; offset > -120; offset--) {
+      if (!daySet.has(localDayKey(dayStart(today, offset)))) break
+      streak += 1
+    }
+
+    const thisWeekStart = dayStart(today, -6).getTime()
+    const prevWeekStart = dayStart(today, -13).getTime()
+    const prevWeekEnd = dayStart(today, -7).getTime()
+    let thisWeekExpense = 0
+    let prevWeekExpense = 0
+
+    for (const transaction of transactions) {
+      if (transaction.type !== 'expense') continue
+      const time = dayStart(transaction.date).getTime()
+      if (time >= thisWeekStart) thisWeekExpense += transaction.amount
+      if (time >= prevWeekStart && time <= prevWeekEnd) prevWeekExpense += transaction.amount
+    }
+
+    const delta = prevWeekExpense > 0
+      ? Math.round(((thisWeekExpense - prevWeekExpense) / prevWeekExpense) * 100)
+      : 0
+
+    return {
+      streak,
+      trendText: prevWeekExpense === 0
+        ? 'Minggu ini mulai terbaca.'
+        : delta <= 0
+          ? `Lebih hemat ${Math.abs(delta)}% dari minggu lalu.`
+          : `Naik ${delta}% dari minggu lalu.`,
+      tone: prevWeekExpense > 0 && delta > 0 ? 'warn' : 'good',
+    }
+  }, [transactions])
 
   const savingsRate = income > 0 ? Math.round(((income - expense) / income) * 100) : 0
   const isEmpty = slices.length === 0
@@ -245,13 +295,30 @@ export const TabBeranda = memo(function TabBeranda() {
         )}
       </header>
 
+      <section className="px-4 md:px-8 pb-3">
+        <div className="flex flex-wrap items-center gap-2 rounded-xl bg-[var(--sk-surface-2)] border border-[var(--sk-border)] px-3 py-2.5">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <span className="w-2 h-2 rounded-full bg-[var(--sk-cyan)] shadow-[0_0_10px_var(--sk-cyan-glow)]" />
+            <span className="text-xs font-semibold text-[var(--sk-text)]">
+              {insightBar.streak > 0 ? `${insightBar.streak} hari rutin nyatat` : 'Mulai catat hari ini'}
+            </span>
+          </div>
+          <span className={cn(
+            'text-xs font-medium',
+            insightBar.tone === 'good' ? 'text-[var(--sk-green)]' : 'text-[var(--sk-amber)]'
+          )}>
+            {insightBar.trendText}
+          </span>
+        </div>
+      </section>
+
       {/* ── Balance + Donut card ── */}
       <section className="px-4 md:px-8 pb-4">
-        <div className="rounded-2xl bg-[var(--sk-surface)] border border-[var(--sk-border)] p-5 relative isolate">
+        <div className="rounded-2xl bg-[var(--sk-surface)] border border-[var(--sk-border)] p-5 overflow-hidden relative">
           {/* ambient glow */}
           <div
             aria-hidden
-            className="pointer-events-none absolute -top-10 right-0 w-40 h-40 sm:w-48 sm:h-48 rounded-full blur-2xl opacity-70"
+            className="pointer-events-none absolute -top-10 right-0 w-48 h-48 rounded-full blur-3xl"
             style={{ background: 'radial-gradient(circle, rgba(56,189,248,0.07) 0%, transparent 70%)' }}
           />
           <div className="relative z-10 flex flex-wrap items-center justify-between gap-4">
@@ -400,6 +467,7 @@ export const TabBeranda = memo(function TabBeranda() {
           <TransactionList
             transactions={filteredTransactions}
             onDelete={deleteTransaction}
+            onUpdate={updateTransaction}
             newTransactionId={newTransactionId}
           />
         </div>
