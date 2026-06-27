@@ -364,7 +364,7 @@ function normalizeNumberString(raw: string, mode: 'plain' | 'suffix' = 'suffix')
  * Attempts to parse a single whitespace-split token as a currency amount.
  * Returns null if the token is not an amount token.
  */
-function parseAmountToken(token: string): number | null {
+export function parseAmountToken(token: string): number | null {
   const normalizedToken = normalizeToken(token)
   const hasCurrencyPrefix = /^(rp|idr)(?=\d)/.test(normalizedToken)
   const t = normalizedToken.replace(/^(rp|idr)(?=\d)/, '')
