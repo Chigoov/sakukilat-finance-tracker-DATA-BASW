@@ -59,6 +59,10 @@ export interface MockUser {
 export interface Toast {
   text: string
   type: 'success' | 'error'
+  action?: {
+    label: string
+    onClick: () => void
+  }
 }
 
 export type ThemeMode = 'system' | 'dark' | 'light'
@@ -108,7 +112,8 @@ interface StoreValue {
 
   // feedback
   toast: Toast | null
-  showToast: (text: string, type: 'success' | 'error') => void
+  showToast: (text: string, type: 'success' | 'error', action?: Toast['action']) => void
+  dismissToast: () => void
 }
 
 interface AuthStore {
@@ -167,7 +172,8 @@ interface PreferenceStore {
 
 interface FeedbackStore {
   toast: Toast | null
-  showToast: (text: string, type: 'success' | 'error') => void
+  showToast: (text: string, type: 'success' | 'error', action?: Toast['action']) => void
+  dismissToast: () => void
 }
 
 const StoreContext = createContext<StoreValue | null>(null)
@@ -477,9 +483,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [wallets, customPayments, customCategories, lastActiveWalletId]
   )
 
-  const showToast = useCallback((text: string, type: 'success' | 'error') => {
+  const dismissToast = useCallback(() => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
-    setToast({ text, type })
+    setToast(null)
+    toastTimerRef.current = null
+  }, [])
+
+  const showToast = useCallback((text: string, type: 'success' | 'error', action?: Toast['action']) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
+    setToast({ text, type, action })
     toastTimerRef.current = setTimeout(() => {
       setToast(null)
       toastTimerRef.current = null
@@ -845,8 +857,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   )
 
   const feedbackValue = useMemo<FeedbackStore>(
-    () => ({ toast, showToast }),
-    [toast, showToast]
+    () => ({ toast, showToast, dismissToast }),
+    [toast, showToast, dismissToast]
   )
 
   const value = useMemo<StoreValue>(
@@ -883,6 +895,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setThemeMode,
       toast,
       showToast,
+      dismissToast,
     }),
     [
       user, authReady, signInWithGoogle, signOut, updateProfile,
@@ -891,7 +904,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       monthlyBudget, setMonthlyBudget,
       customPayments, customCategories, addCustomPayment, removeCustomPayment,
       addCustomCategory, removeCustomCategory, parserExtras,
-      zenMode, themeMode, toggleZen, setThemeMode, toast, showToast,
+      zenMode, themeMode, toggleZen, setThemeMode, toast, showToast, dismissToast,
     ]
   )
 
