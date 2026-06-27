@@ -5,6 +5,7 @@ import { ArrowRightLeft, Check, Gauge, Landmark, Pencil, PiggyBank, Plus, Trash2
 import { useBudgetStore, useWalletStore } from '@/lib/store'
 import { GoalTracker } from '@/components/goal-tracker'
 import { RecurringManager } from '@/components/recurring-manager'
+import { CategoryManager } from '@/components/category-manager'
 import { formatIDR, formatIDRCompact } from '@/lib/parser'
 import { parseAmountInput } from '@/lib/amount'
 import type { WalletType } from '@/lib/mock-data'
@@ -374,6 +375,7 @@ export function TabSaku() {
         <RecurringManager />
         <GoalTracker />
         <WalletManager />
+        <CategoryManager />
         <MoneyMovePanel />
       </div>
     </div>

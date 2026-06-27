@@ -543,6 +543,92 @@ function isContextualAmount(tokens: string[], indexes: Set<number>, extras?: Par
  * matching for compound keywords like "shopeepay".
  * Defaults to 'tunai' (cash) when no method is detected.
  */
+/**
+ * Expand multi-word payment/wallet keywords into single-token aliases.
+ *
+ * Why: detectPaymentMethod() compares against ONE TOKEN AT A TIME. A wallet
+ * labelled "Kartu Kredit" with the user-typed keyword "kartu kredit" has a
+ * space inside it, so it can never match a tokenised input. We pre-build
+ * underscore-joined and concatenated aliases so the matcher can find it.
+ *
+ * Also auto-derives aliases from the wallet/payment LABEL itself, because
+ * users routinely add a wallet without bothering to fill the keywords field.
+ */
+function expandMultiWordKeywords(extras?: ParserExtras): ParserExtras | undefined {
+  if (!extras?.payments) return extras
+  const expanded = extras.payments.map(p => {
+    const set = new Set<string>(p.keywords.map(normalizeToken).filter(Boolean))
+    const seeds: string[] = [...p.keywords, p.label ?? '']
+    for (const raw of seeds) {
+      const lower = (raw ?? '').trim().toLowerCase()
+      if (!lower) continue
+      if (/\s/.test(lower)) {
+        // "kartu kredit" -> add "kartukredit" + "kartu_kredit" as token aliases
+        set.add(lower.replace(/\s+/g, ''))
+        set.add(lower.replace(/\s+/g, '_'))
+      }
+    }
+    return { ...p, keywords: Array.from(set) }
+  })
+  return { ...extras, payments: expanded }
+}
+
+/**
+ * Pre-tokenises a raw input array so that multi-word custom keywords
+ * collapse into a single token before downstream matching runs.
+ *
+ * Example: with wallet "Kartu Kredit", ["mie","ayam","50000","kartu","kredit"]
+ * becomes ["mie","ayam","50000","kartu_kredit"]. Sorted longest-first so
+ * "Kartu Kredit" (2 words) is preferred over an also-defined "Kartu" (1).
+ */
+function preprocessTokens(tokens: string[], extras?: ParserExtras): string[] {
+  if (!extras?.payments || tokens.length < 2) return tokens
+
+  type MultiEntry = { wordTokens: string[]; replacement: string }
+  const entries: MultiEntry[] = []
+  for (const p of extras.payments) {
+    const seeds: string[] = [...p.keywords, p.label ?? '']
+    for (const raw of seeds) {
+      const lower = (raw ?? '').trim().toLowerCase()
+      if (!lower || !/\s/.test(lower)) continue
+      entries.push({
+        wordTokens: lower.split(/\s+/).map(normalizeToken).filter(Boolean),
+        replacement: lower.replace(/\s+/g, '_'),
+      })
+    }
+  }
+  if (entries.length === 0) return tokens
+
+  // Longest match wins — "kartu kredit" (2) beats "kartu" (1).
+  entries.sort((a, b) => b.wordTokens.length - a.wordTokens.length)
+
+  const lower = tokens.map(t => normalizeToken(t))
+  const out: string[] = []
+  let i = 0
+  while (i < tokens.length) {
+    let matched = false
+    for (const e of entries) {
+      const n = e.wordTokens.length
+      if (n < 2 || i + n > tokens.length) continue
+      let ok = true
+      for (let j = 0; j < n; j++) {
+        if (lower[i + j] !== e.wordTokens[j]) { ok = false; break }
+      }
+      if (ok) {
+        out.push(e.replacement)
+        i += n
+        matched = true
+        break
+      }
+    }
+    if (!matched) {
+      out.push(tokens[i])
+      i++
+    }
+  }
+  return out
+}
+
 function detectPaymentMethod(tokens: string[], extras?: ParserExtras): string {
   for (const token of tokens) {
     const tl = normalizeToken(token)
@@ -819,7 +905,13 @@ export function parseTransaction(input: string, extras?: ParserExtras): ParsedTr
   const trimmed = input.trim()
   if (!trimmed) return null
 
-  const tokens = trimmed.split(/\s+/)
+  // Auto-derive single-token aliases for multi-word wallet/payment keywords
+  // (e.g. "Kartu Kredit" → "kartu_kredit") and collapse adjacent matches in
+  // the raw input so downstream single-token matchers can find them.
+  const extrasExpanded = expandMultiWordKeywords(extras)
+  const tokens = preprocessTokens(trimmed.split(/\s+/), extrasExpanded)
+  // Rebind `extras` so legacy code below transparently uses the expanded list.
+  extras = extrasExpanded
   const type = detectType(trimmed)
 
   // ── Step 1: Find the LAST amount token ──────────────────────────────────

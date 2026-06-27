@@ -1,8 +1,9 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
-import { ArrowRightLeft, Mic, PiggyBank, SendHorizonal, Sparkles, X, Loader2, TrendingDown, TrendingUp } from 'lucide-react'
+import { ArrowRightLeft, Mic, PiggyBank, SendHorizonal, Sparkles, SlidersHorizontal, X, Loader2, TrendingDown, TrendingUp } from 'lucide-react'
 import { parseEntry, formatIDR, type ParserExtras } from '@/lib/parser'
+import { ManualEntryForm } from '@/components/manual-entry-form'
 import { cn } from '@/lib/utils'
 import { getCategoryConfig, getPaymentLabel } from './category-badge'
 
@@ -67,6 +68,7 @@ export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, au
   const [hintIndex, setHintIndex] = useState(0)
   const [localSubmitting, setLocalSubmitting] = useState(false)
   const [mode, setMode] = useState<InputMode>('auto')
+  const [manualOpen, setManualOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const locked = Boolean(isSubmitting || localSubmitting)
 
@@ -426,6 +428,20 @@ export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, au
           </button>
         )}
 
+        {/* Manual entry — escape hatch when the parser can't help (or user wants
+            explicit field control). Always available, hands the current value
+            to the modal as a seed so users don't lose their keystrokes. */}
+        <button
+          type="button"
+          onClick={() => setManualOpen(true)}
+          disabled={locked}
+          aria-label="Catat manual"
+          title="Catat manual — kontrol penuh kategori & saku"
+          className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 transition-all duration-150 bg-[var(--sk-surface-3)] text-[var(--sk-text-muted)] hover:text-[var(--sk-text)]"
+        >
+          <SlidersHorizontal className="w-4 h-4" />
+        </button>
+
         {/* Clear / Submit */}
         {value && (
           <button
@@ -467,6 +483,13 @@ export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, au
           Tulis transaksi pakai bahasa natural • tekan Enter untuk menyimpan
         </p>
       )}
+
+      {/* Manual entry escape hatch — modal driven, idle until opened. */}
+      <ManualEntryForm
+        open={manualOpen}
+        onClose={() => setManualOpen(false)}
+        seedInput={value}
+      />
     </div>
   )
 }

@@ -69,6 +69,17 @@ export interface TransactionUpdateInput {
   amount: number
 }
 
+/** Pre-validated transaction payload used by the manual-entry escape hatch.
+ *  All fields required — the form must collect them or default sensibly. */
+export interface ManualTransactionInput {
+  description: string
+  amount: number
+  type: 'expense' | 'income'
+  category: string
+  paymentMethod: string
+  date?: Date
+}
+
 export type ThemeMode = 'system' | 'dark' | 'light'
 
 interface StoreValue {
@@ -81,6 +92,8 @@ interface StoreValue {
   // data
   transactions: Transaction[]
   addTransaction: (input: string) => Promise<boolean>
+  /** Manual escape hatch: bypass the natural-language parser entirely. */
+  addManualTransaction: (input: ManualTransactionInput) => Promise<boolean>
   updateTransaction: (id: string, updates: TransactionUpdateInput) => void
   deleteTransaction: (id: string) => void
   newTransactionId: string | null
@@ -105,6 +118,7 @@ interface StoreValue {
   addCustomPayment: (label: string, keywords: string[]) => void
   removeCustomPayment: (id: string) => void
   addCustomCategory: (label: string, keywords: string[]) => void
+  updateCustomCategory: (id: string, updates: { label: string; keywords: string[] }) => void
   removeCustomCategory: (id: string) => void
   parserExtras: ParserExtras
 
@@ -135,6 +149,8 @@ interface TransactionDataStore {
 
 interface TransactionActionsStore {
   addTransaction: (input: string) => Promise<boolean>
+  /** Manual escape hatch: bypass the natural-language parser entirely. */
+  addManualTransaction: (input: ManualTransactionInput) => Promise<boolean>
   updateTransaction: (id: string, updates: TransactionUpdateInput) => void
   deleteTransaction: (id: string) => void
 }
@@ -165,6 +181,7 @@ interface CustomizationStore {
   addCustomPayment: (label: string, keywords: string[]) => void
   removeCustomPayment: (id: string) => void
   addCustomCategory: (label: string, keywords: string[]) => void
+  updateCustomCategory: (id: string, updates: { label: string; keywords: string[] }) => void
   removeCustomCategory: (id: string) => void
   parserExtras: ParserExtras
 }
@@ -820,15 +837,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         date: parsed.date ?? new Date(),
       }
 
+      // Soft balance gate. We INTENTIONALLY no longer block submission when
+      // a wallet would drop below zero — credit cards exist, debt happens,
+      // and users routinely log expenses before income lands. We warn so
+      // the user notices, then let the transaction through.
       if (optimistic.type === 'expense' && walletDropsBelowZero(wallets, optimistic)) {
-        showToast('Saldo saku ini tidak cukup. Pilih saku lain atau tambah saldo dulu.', 'error')
-        setIsSubmitting(false)
-        return false
-      }
-
-      // Step 1 — instant local update
-      if (optimistic.type === 'expense' && walletDropsBelowZero(wallets, optimistic)) {
-        showToast('⚠️ Saldo dompet ini minus!', 'error')
+        showToast(
+          'Saldo saku ini jadi minus. Transaksi tetap tercatat — edit jika perlu.',
+          'error'
+        )
       }
       setTransactions(prev => [optimistic, ...prev])
       setWallets(prev => adjustWallets(prev, transactionImpact(optimistic, 1)))
@@ -857,6 +874,49 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       return true
     },
     [parserExtras, showToast, transferMoney, wallets]
+  )
+
+  /** Manual entry — bypasses the parser entirely. Used by the modal form
+   *  surfaced from SmartInput when the NL parser fails or the user wants
+   *  precise wallet assignment. Same soft-balance semantics. */
+  const addManualTransaction = useCallback(
+    async (input: ManualTransactionInput): Promise<boolean> => {
+      if (!input.description.trim() || !Number.isFinite(input.amount) || input.amount <= 0) {
+        showToast('Lengkapi deskripsi dan nominal dulu.', 'error')
+        return false
+      }
+      setIsSubmitting(true)
+      const optimisticId = generateId()
+      const optimistic: Transaction = {
+        id: optimisticId,
+        kind: 'transaction',
+        description: input.description.trim(),
+        amount: Math.round(input.amount),
+        type: input.type,
+        category: input.category,
+        paymentMethod: input.paymentMethod,
+        date: input.date ?? new Date(),
+      }
+
+      if (optimistic.type === 'expense' && walletDropsBelowZero(wallets, optimistic)) {
+        showToast(
+          'Saldo saku ini jadi minus. Transaksi tetap tercatat — edit jika perlu.',
+          'error'
+        )
+      }
+
+      setTransactions(prev => [optimistic, ...prev])
+      setWallets(prev => adjustWallets(prev, transactionImpact(optimistic, 1)))
+      setLastActiveWalletId(optimistic.paymentMethod)
+      setNewTransactionId(optimisticId)
+      setIsSubmitting(false)
+
+      if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+        navigator.vibrate(28)
+      }
+      return true
+    },
+    [wallets, showToast]
   )
 
   const deleteTransaction = useCallback(
@@ -955,6 +1015,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [showToast]
   )
 
+  const updateCustomCategory = useCallback(
+    (id: string, updates: { label: string; keywords: string[] }) => {
+      const label = updates.label.trim()
+      if (!label) return
+      const kws = Array.from(new Set(updates.keywords.map(k => k.toLowerCase().trim()).filter(Boolean)))
+      setCustomCategories(prev =>
+        prev.map(c => (c.id === id ? { ...c, label, keywords: kws } : c))
+      )
+      showToast(`Kategori "${label}" diperbarui.`, 'success')
+    },
+    [showToast]
+  )
+
   const removeCustomCategory = useCallback((id: string) => {
     setCustomCategories(prev => prev.filter(c => c.id !== id))
   }, [])
@@ -977,8 +1050,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   )
 
   const transactionActionsValue = useMemo<TransactionActionsStore>(
-    () => ({ addTransaction, updateTransaction, deleteTransaction }),
-    [addTransaction, updateTransaction, deleteTransaction]
+    () => ({ addTransaction, addManualTransaction, updateTransaction, deleteTransaction }),
+    [addTransaction, addManualTransaction, updateTransaction, deleteTransaction]
   )
 
   const transactionStatusValue = useMemo<TransactionStatusStore>(
@@ -1011,6 +1084,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       addCustomPayment,
       removeCustomPayment,
       addCustomCategory,
+      updateCustomCategory,
       removeCustomCategory,
       parserExtras,
     }),
@@ -1020,6 +1094,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       addCustomPayment,
       removeCustomPayment,
       addCustomCategory,
+      updateCustomCategory,
       removeCustomCategory,
       parserExtras,
     ]
@@ -1044,6 +1119,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       updateProfile,
       transactions,
       addTransaction,
+      addManualTransaction,
       updateTransaction,
       deleteTransaction,
       newTransactionId,
@@ -1062,6 +1138,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       addCustomPayment,
       removeCustomPayment,
       addCustomCategory,
+      updateCustomCategory,
       removeCustomCategory,
       parserExtras,
       zenMode,
@@ -1074,11 +1151,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }),
     [
       user, authReady, signInWithGoogle, signOut, updateProfile,
-      transactions, addTransaction, updateTransaction, deleteTransaction, newTransactionId, isSubmitting,
+      transactions, addTransaction, addManualTransaction, updateTransaction, deleteTransaction, newTransactionId, isSubmitting,
       wallets, totalStored, addWallet, updateWallet, removeWallet, transferMoney, saveMoney,
       monthlyBudget, setMonthlyBudget,
       customPayments, customCategories, addCustomPayment, removeCustomPayment,
-      addCustomCategory, removeCustomCategory, parserExtras,
+      addCustomCategory, updateCustomCategory, removeCustomCategory, parserExtras,
       zenMode, themeMode, toggleZen, setThemeMode, toast, showToast, dismissToast,
     ]
   )
