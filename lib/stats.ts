@@ -4,10 +4,21 @@ export function dayKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+function isMoneyMove(t: Transaction): boolean {
+  return t.kind === 'transfer' || t.kind === 'saving'
+}
+
+function monthBounds(ref: Date): { start: Date; end: Date } {
+  return {
+    start: new Date(ref.getFullYear(), ref.getMonth(), 1),
+    end: new Date(ref.getFullYear(), ref.getMonth() + 1, 1),
+  }
+}
+
 // ── Monthly totals (current calendar month) ───────────────────────────────────
 export function monthlyTotals(transactions: Transaction[], ref = new Date()) {
-  const start = new Date(ref.getFullYear(), ref.getMonth(), 1)
-  const inMonth = transactions.filter(t => t.date >= start)
+  const { start, end } = monthBounds(ref)
+  const inMonth = transactions.filter(t => t.date >= start && t.date < end && !isMoneyMove(t))
   const income = inMonth.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0)
   const expense = inMonth.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0)
   return { income, expense, balance: income - expense }
@@ -19,11 +30,15 @@ export interface CategorySlice {
   total: number
   pct: number
 }
-export function categoryBreakdown(transactions: Transaction[], ref = new Date()): CategorySlice[] {
-  const start = new Date(ref.getFullYear(), ref.getMonth(), 1)
+export function categoryBreakdown(
+  transactions: Transaction[],
+  ref = new Date(),
+  type: 'expense' | 'income' = 'expense'
+): CategorySlice[] {
+  const { start, end } = monthBounds(ref)
   const map = new Map<string, number>()
   for (const t of transactions) {
-    if (t.type !== 'expense' || t.date < start) continue
+    if (isMoneyMove(t) || t.type !== type || t.date < start || t.date >= end) continue
     map.set(t.category, (map.get(t.category) ?? 0) + t.amount)
   }
   const total = Array.from(map.values()).reduce((s, v) => s + v, 0)
@@ -43,8 +58,10 @@ export function dailyAggregates(transactions: Transaction[]): Map<string, DayAgg
   for (const t of transactions) {
     const key = dayKey(t.date)
     const cur = map.get(key) ?? { expense: 0, income: 0, count: 0 }
-    if (t.type === 'expense') cur.expense += t.amount
-    else cur.income += t.amount
+    if (!isMoneyMove(t)) {
+      if (t.type === 'expense') cur.expense += t.amount
+      else cur.income += t.amount
+    }
     cur.count += 1
     map.set(key, cur)
   }
@@ -78,7 +95,7 @@ export function trendSeries(transactions: Transaction[], range: TrendRange): Tre
       const label = new Intl.DateTimeFormat('id-ID', { month: 'short' }).format(d)
       let expense = 0, income = 0
       for (const t of transactions) {
-        if (t.date >= d && t.date < next) {
+        if (!isMoneyMove(t) && t.date >= d && t.date < next) {
           if (t.type === 'expense') expense += t.amount
           else income += t.amount
         }
@@ -99,7 +116,7 @@ export function trendSeries(transactions: Transaction[], range: TrendRange): Tre
         : new Intl.DateTimeFormat('id-ID', { day: 'numeric' }).format(d)
     let expense = 0, income = 0
     for (const t of transactions) {
-      if (dayKey(t.date) === key) {
+      if (!isMoneyMove(t) && dayKey(t.date) === key) {
         if (t.type === 'expense') expense += t.amount
         else income += t.amount
       }
@@ -118,7 +135,7 @@ export function topSavedCategory(transactions: Transaction[]): string | null {
   const sumByCat = (from: Date, to: Date) => {
     const m = new Map<string, number>()
     for (const t of transactions) {
-      if (t.type !== 'expense') continue
+      if (isMoneyMove(t) || t.type !== 'expense') continue
       if (t.date >= from && t.date < to) m.set(t.category, (m.get(t.category) ?? 0) + t.amount)
     }
     return m
@@ -138,4 +155,101 @@ export function topSavedCategory(transactions: Transaction[]): string | null {
     }
   }
   return best
+}
+
+export interface BudgetStatus {
+  budget: number
+  spent: number
+  remaining: number
+  daysInMonth: number
+  dayOfMonth: number
+  remainingDays: number
+  weekOfMonth: number
+  totalWeeks: number
+  weekStartDay: number
+  weekEndDay: number
+  remainingWeekDays: number
+  baseDailyBudget: number
+  baseWeeklyBudget: number
+  dynamicDailyBudget: number
+  weeklySpent: number
+  weeklyRemaining: number
+  todayExpense: number
+  todayOverBase: boolean
+  weekOverBase: boolean
+  pctUsed: number
+  pctWeekUsed: number
+  roast: string | null
+}
+
+const BUDGET_ROASTS = [
+  'Budget bulan ini sudah wafat. Dompetmu minta cuti dulu.',
+  'Keuanganmu barusan melakukan parkour tanpa helm.',
+  'Sisa bulan masih panjang, tapi budget sudah pulang duluan.',
+  'Ini bukan bocor halus lagi, ini keran finansial kebuka penuh.',
+]
+
+export function monthlyBudgetStatus(
+  transactions: Transaction[],
+  budget: number,
+  ref = new Date()
+): BudgetStatus {
+  const daysInMonth = new Date(ref.getFullYear(), ref.getMonth() + 1, 0).getDate()
+  const dayOfMonth = ref.getDate()
+  const remainingDays = Math.max(1, daysInMonth - dayOfMonth + 1)
+  const start = new Date(ref.getFullYear(), ref.getMonth(), 1)
+  const tomorrow = new Date(ref.getFullYear(), ref.getMonth(), ref.getDate() + 1)
+  const todayKey = dayKey(ref)
+  const weekOfMonth = Math.floor((dayOfMonth - 1) / 7) + 1
+  const totalWeeks = Math.ceil(daysInMonth / 7)
+  const weekStartDay = (weekOfMonth - 1) * 7 + 1
+  const weekEndDay = Math.min(daysInMonth, weekStartDay + 6)
+  const weekStart = new Date(ref.getFullYear(), ref.getMonth(), weekStartDay)
+  const weekEndExclusive = new Date(ref.getFullYear(), ref.getMonth(), weekEndDay + 1)
+  const remainingWeekDays = Math.max(1, weekEndDay - dayOfMonth + 1)
+
+  let spent = 0
+  let weeklySpent = 0
+  let todayExpense = 0
+
+  for (const t of transactions) {
+    if (isMoneyMove(t) || t.type !== 'expense' || t.date < start || t.date >= tomorrow) continue
+    spent += t.amount
+    if (t.date >= weekStart && t.date < weekEndExclusive) weeklySpent += t.amount
+    if (dayKey(t.date) === todayKey) todayExpense += t.amount
+  }
+
+  const safeBudget = Math.max(0, budget)
+  const remaining = safeBudget - spent
+  const baseDailyBudget = safeBudget / daysInMonth
+  const baseWeeklyBudget = baseDailyBudget * (weekEndDay - weekStartDay + 1)
+  const weeklyRemaining = baseWeeklyBudget - weeklySpent
+  const dynamicDailyBudget = Math.max(0, weeklyRemaining / remainingWeekDays)
+  const overBudget = spent > safeBudget && safeBudget > 0
+  const roastIndex = safeBudget > 0 ? Math.min(BUDGET_ROASTS.length - 1, Math.floor((spent / safeBudget - 1) * 4)) : 0
+
+  return {
+    budget: safeBudget,
+    spent,
+    remaining,
+    daysInMonth,
+    dayOfMonth,
+    remainingDays,
+    weekOfMonth,
+    totalWeeks,
+    weekStartDay,
+    weekEndDay,
+    remainingWeekDays,
+    baseDailyBudget,
+    baseWeeklyBudget,
+    dynamicDailyBudget,
+    weeklySpent,
+    weeklyRemaining,
+    todayExpense,
+    todayOverBase: todayExpense > baseDailyBudget && safeBudget > 0,
+    weekOverBase: weeklySpent > baseWeeklyBudget && safeBudget > 0,
+    pctUsed: safeBudget > 0 ? spent / safeBudget : 0,
+    pctWeekUsed: baseWeeklyBudget > 0 ? weeklySpent / baseWeeklyBudget : 0,
+    roast: overBudget ? BUDGET_ROASTS[roastIndex] : null,
+  }
 }

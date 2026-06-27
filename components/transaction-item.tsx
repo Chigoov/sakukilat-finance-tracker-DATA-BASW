@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Trash2, ChevronRight } from 'lucide-react'
+import { ArrowRightLeft, ChevronRight, PiggyBank, Trash2 } from 'lucide-react'
 import { formatIDR, formatTime } from '@/lib/parser'
 import type { Transaction } from '@/lib/mock-data'
 import { CategoryIcon, SyncDot, getCategoryConfig, getPaymentLabel } from './category-badge'
@@ -17,8 +17,14 @@ export function TransactionItem({ transaction, onDelete, isNew }: TransactionIte
   const [expanded, setExpanded] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
+  const kind = transaction.kind ?? 'transaction'
+  const isMove = kind === 'transfer' || kind === 'saving'
   const isExpense = transaction.type === 'expense'
   const config = getCategoryConfig(transaction.category)
+  const MoveIcon = kind === 'saving' ? PiggyBank : ArrowRightLeft
+  const routeLabel = `${getPaymentLabel(transaction.fromWalletId ?? transaction.paymentMethod)} -> ${getPaymentLabel(transaction.toWalletId ?? '')}`
+  const typeLabel = isMove ? (kind === 'saving' ? 'Simpan' : 'Pindah') : isExpense ? 'Pengeluaran' : 'Pemasukan'
+  const signedAmount = `${isMove ? '' : isExpense ? '-' : '+'}${formatIDR(transaction.amount)}`
 
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -46,21 +52,21 @@ export function TransactionItem({ transaction, onDelete, isNew }: TransactionIte
       aria-expanded={expanded}
       onKeyDown={e => e.key === 'Enter' && setExpanded(x => !x)}
     >
-      {/* Pending overlay shimmer */}
       {transaction.isPending && (
-        <div
-          aria-hidden
-          className="absolute inset-0 rounded-xl overflow-hidden pointer-events-none"
-        >
+        <div aria-hidden className="absolute inset-0 rounded-xl overflow-hidden pointer-events-none">
           <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/[0.03] to-transparent animate-[shimmer_1.5s_ease-in-out_infinite] -skew-x-12" />
         </div>
       )}
 
       <div className="flex items-center gap-3 p-3.5">
-        {/* Category icon */}
-        <CategoryIcon category={transaction.category} size="md" />
+        {isMove ? (
+          <div className="w-10 h-10 rounded-xl bg-[var(--sk-cyan-dim)] flex items-center justify-center flex-shrink-0">
+            <MoveIcon className="w-5 h-5 text-[var(--sk-cyan)]" />
+          </div>
+        ) : (
+          <CategoryIcon category={transaction.category} size="md" />
+        )}
 
-        {/* Content */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5">
             <span className="text-sm font-medium text-[var(--sk-text)] truncate leading-tight capitalize">
@@ -68,32 +74,31 @@ export function TransactionItem({ transaction, onDelete, isNew }: TransactionIte
             </span>
             <SyncDot status={transaction.syncStatus} />
           </div>
-          <div className="flex items-center gap-2 mt-0.5">
-            <span className="text-xs text-[var(--sk-text-muted)]">
-              {config.label}
+          <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 mt-0.5">
+            <span className="text-xs text-[var(--sk-text-muted)] shrink-0">
+              {isMove ? typeLabel : config.label}
             </span>
-            <span className="text-[var(--sk-text-dim)] text-xs">·</span>
-            <span className="text-xs text-[var(--sk-text-muted)]">
-              {getPaymentLabel(transaction.paymentMethod)}
+            <span className="text-[var(--sk-text-dim)] text-xs shrink-0">.</span>
+            <span className="text-xs text-[var(--sk-text-muted)] min-w-0 break-words">
+              {isMove ? routeLabel : getPaymentLabel(transaction.paymentMethod)}
             </span>
-            <span className="text-[var(--sk-text-dim)] text-xs">·</span>
-            <span className="text-xs text-[var(--sk-text-dim)]">
+            <span className="text-[var(--sk-text-dim)] text-xs shrink-0">.</span>
+            <span className="text-xs text-[var(--sk-text-dim)] shrink-0">
               {formatTime(transaction.date)}
             </span>
           </div>
         </div>
 
-        {/* Amount */}
         <div className="flex items-center gap-2">
           <div className="text-right">
             <span
               className={cn(
                 'text-sm font-bold tabular-nums leading-tight block',
-                isExpense ? 'text-[var(--sk-red)]' : 'text-[var(--sk-green)]'
+                isMove ? 'text-[var(--sk-cyan)]' : isExpense ? 'text-[var(--sk-red)]' : 'text-[var(--sk-green)]'
               )}
               data-amount
             >
-              {isExpense ? '−' : '+'}{formatIDR(transaction.amount)}
+              {signedAmount}
             </span>
           </div>
           <ChevronRight
@@ -105,7 +110,6 @@ export function TransactionItem({ transaction, onDelete, isNew }: TransactionIte
         </div>
       </div>
 
-      {/* Expanded detail */}
       {expanded && (
         <div className="px-3.5 pb-3.5 animate-slide-up">
           <div className="pt-2.5 border-t border-[var(--sk-border)]">
@@ -114,9 +118,9 @@ export function TransactionItem({ transaction, onDelete, isNew }: TransactionIte
                 <span className="text-[var(--sk-text-dim)] block mb-0.5">Tipe</span>
                 <span className={cn(
                   'font-medium',
-                  isExpense ? 'text-[var(--sk-red)]' : 'text-[var(--sk-green)]'
+                  isMove ? 'text-[var(--sk-cyan)]' : isExpense ? 'text-[var(--sk-red)]' : 'text-[var(--sk-green)]'
                 )}>
-                  {isExpense ? 'Pengeluaran' : 'Pemasukan'}
+                  {typeLabel}
                 </span>
               </div>
               <div>
@@ -126,31 +130,30 @@ export function TransactionItem({ transaction, onDelete, isNew }: TransactionIte
                 </span>
               </div>
               <div>
-                <span className="text-[var(--sk-text-dim)] block mb-0.5">Metode</span>
+                <span className="text-[var(--sk-text-dim)] block mb-0.5">{isMove ? 'Rute' : 'Metode'}</span>
                 <span className="font-medium text-[var(--sk-text)]">
-                  {getPaymentLabel(transaction.paymentMethod)}
+                  {isMove ? routeLabel : getPaymentLabel(transaction.paymentMethod)}
                 </span>
               </div>
               <div>
                 <span className="text-[var(--sk-text-dim)] block mb-0.5">Status</span>
                 <span className={cn(
                   'font-medium',
-                  transaction.syncStatus === 'synced'   && 'text-[var(--sk-green)]',
-                  transaction.syncStatus === 'syncing'  && 'text-[var(--sk-amber)]',
-                  transaction.syncStatus === 'error'    && 'text-[var(--sk-red)]',
-                  !transaction.syncStatus               && 'text-[var(--sk-text-muted)]',
+                  transaction.syncStatus === 'synced' && 'text-[var(--sk-green)]',
+                  transaction.syncStatus === 'syncing' && 'text-[var(--sk-amber)]',
+                  transaction.syncStatus === 'error' && 'text-[var(--sk-red)]',
+                  !transaction.syncStatus && 'text-[var(--sk-text-muted)]'
                 )}>
                   {transaction.isPending
-                    ? 'Menyimpan…'
-                    : transaction.syncStatus === 'synced'  ? 'Tersimpan'
+                    ? 'Menyimpan...'
+                    : transaction.syncStatus === 'synced' ? 'Tersimpan'
                     : transaction.syncStatus === 'syncing' ? 'Menyinkronkan'
-                    : transaction.syncStatus === 'error'   ? 'Gagal'
+                    : transaction.syncStatus === 'error' ? 'Gagal'
                     : 'Lokal'}
                 </span>
               </div>
             </div>
 
-            {/* Delete button */}
             {onDelete && !transaction.isPending && (
               <button
                 onClick={handleDelete}

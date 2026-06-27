@@ -47,8 +47,8 @@
   color-scheme: dark;
 
   /* ── Core palette ── */
-  --sk-bg:          #0B0F19;
-  --sk-surface:     #141928;
+  --sk-bg:          #090D16;
+  --sk-surface:     #111827;
   --sk-surface-2:   #1C2438;
   --sk-surface-3:   #232D45;
   --sk-border:      rgba(255,255,255,0.07);
@@ -107,6 +107,59 @@
   --chart-5: #A78BFA;
 }
 
+html[data-theme="light"] {
+  color-scheme: light;
+
+  --sk-bg:          #F5F7FB;
+  --sk-surface:     #FFFFFF;
+  --sk-surface-2:   #EEF2F7;
+  --sk-surface-3:   #E2E8F0;
+  --sk-border:      rgba(15,23,42,0.09);
+  --sk-border-2:    rgba(15,23,42,0.16);
+
+  --sk-text:        #121826;
+  --sk-text-muted:  #4B5D78;
+  --sk-text-dim:    #7C8BA3;
+
+  --sk-cyan:        #0284C7;
+  --sk-cyan-dim:    rgba(2, 132, 199, 0.11);
+  --sk-cyan-glow:   rgba(2, 132, 199, 0.18);
+
+  --sk-green:       #059669;
+  --sk-green-dim:   rgba(5, 150, 105, 0.11);
+  --sk-red:         #DC2626;
+  --sk-red-dim:     rgba(220, 38, 38, 0.10);
+  --sk-amber:       #B45309;
+  --sk-amber-dim:   rgba(180, 83, 9, 0.11);
+
+  --background:     var(--sk-bg);
+  --foreground:     var(--sk-text);
+  --card:           var(--sk-surface);
+  --card-foreground:var(--sk-text);
+  --popover:        var(--sk-surface-2);
+  --popover-foreground: var(--sk-text);
+  --primary:        var(--sk-cyan);
+  --primary-foreground: #FFFFFF;
+  --secondary:      var(--sk-surface-2);
+  --secondary-foreground: var(--sk-text-muted);
+  --muted:          var(--sk-surface);
+  --muted-foreground: var(--sk-text-muted);
+  --accent:         var(--sk-surface-2);
+  --accent-foreground: var(--sk-text);
+  --destructive:    var(--sk-red);
+  --border:         var(--sk-border);
+  --input:          var(--sk-surface-2);
+  --ring:           var(--sk-cyan);
+  --sidebar: var(--sk-surface);
+  --sidebar-foreground: var(--sk-text);
+  --sidebar-primary: var(--sk-cyan);
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: var(--sk-surface-2);
+  --sidebar-accent-foreground: var(--sk-text);
+  --sidebar-border: var(--sk-border);
+  --sidebar-ring: var(--sk-cyan);
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -117,7 +170,7 @@
   }
   html {
     @apply font-sans;
-    background-color: #0B0F19;
+    background-color: var(--sk-bg);
   }
 }
 
@@ -196,19 +249,46 @@
 .animate-fade-in    { animation: sk-fade-in   0.3s ease both; }
 .animate-sheet-up   { animation: sk-sheet-up  0.32s cubic-bezier(0.16,1,0.3,1) both; }
 
-/* ── Zen Mode: blur sensitive wealth figures without unmounting them ── */
+/* ── Zen Mode: hide sensitive wealth figures without unmounting them ──
+ * Note: we avoid `filter: blur()` on mobile because stacking it inside
+ * containers that already use `backdrop-filter` + `overflow-hidden` causes
+ * vertical color-stripe GPU compositing artifacts on Android Chromium
+ * (Adreno/Mali). We use a text-shadow blur trick that the GPU can render
+ * as a single fast pass without tile readback.
+ */
 .sk-zen-blur {
-  filter: blur(10px);
-  opacity: 0.75;
-  transition: filter 0.3s ease, opacity 0.3s ease;
+  color: transparent !important;
+  text-shadow: 0 0 12px var(--sk-text-muted);
+  letter-spacing: 0.02em;
   user-select: none;
   pointer-events: none;
+  transition: text-shadow 0.25s ease;
 }
 
-/* ── Glass surface utility ── */
+/* ── Glass surface utility ──
+ * Stacking two `backdrop-filter: blur()` layers (bottom nav + smart input)
+ * on the same Y axis caused visible seams on low-end Android. We now
+ * progressive-enhance: solid-ish surface by default, blur only when the
+ * browser supports it AND the viewport is wide enough to absorb the cost.
+ */
 .sk-glass {
-  background: rgba(20, 25, 40, 0.85);
-  backdrop-filter: blur(16px) saturate(180%);
-  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  background: color-mix(in srgb, var(--sk-surface) 94%, transparent);
   border: 1px solid var(--sk-border-2);
+  isolation: isolate;
+}
+@supports ((backdrop-filter: blur(12px)) or (-webkit-backdrop-filter: blur(12px))) {
+  .sk-glass {
+    background: color-mix(in srgb, var(--sk-surface) 80%, transparent);
+    backdrop-filter: blur(14px) saturate(160%);
+    -webkit-backdrop-filter: blur(14px) saturate(160%);
+  }
+}
+/* Below 480px we disable backdrop-filter to prevent compositing stripes on
+ * low-end mobile GPUs — the dark surface is opaque enough on its own. */
+@media (max-width: 480px) {
+  .sk-glass {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    background: color-mix(in srgb, var(--sk-surface) 97%, transparent);
+  }
 }

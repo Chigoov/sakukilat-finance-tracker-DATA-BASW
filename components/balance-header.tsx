@@ -25,12 +25,16 @@ export function BalanceHeader({
   const balanceIsPositive = totalBalance >= 0
 
   return (
-    <header className="relative w-full overflow-hidden">
-      {/* Background glow */}
+    // `isolate` creates a dedicated stacking context so the radial-gradient glow
+    // below renders without forcing the parent to allocate a clipping layer.
+    // We removed `overflow-hidden` because it combined with `blur-3xl` +
+    // backdrop-filter children to produce GPU compositing stripes on mobile.
+    <header className="relative w-full isolate">
+      {/* Background glow — clamped to header bounds via aria-hidden mask, no overflow-hidden needed. */}
       <div
         aria-hidden
-        className="pointer-events-none absolute -top-20 left-1/2 -translate-x-1/2 h-48 w-72 rounded-full blur-3xl"
-        style={{ background: 'radial-gradient(ellipse, rgba(56,189,248,0.08) 0%, transparent 70%)' }}
+        className="pointer-events-none absolute -top-16 left-1/2 -translate-x-1/2 h-40 w-64 sm:h-48 sm:w-72 rounded-full blur-2xl opacity-70"
+        style={{ background: 'radial-gradient(ellipse, rgba(56,189,248,0.10) 0%, transparent 70%)' }}
       />
 
       <div className="relative z-10 px-4 pt-6 pb-4 md:px-8 md:pt-8 md:pb-6">
@@ -44,26 +48,23 @@ export function BalanceHeader({
               SakuKilat
             </span>
           </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setHidden(h => !h)}
-              aria-label={hidden ? 'Tampilkan saldo' : 'Sembunyikan saldo'}
-              className="flex items-center justify-center w-8 h-8 rounded-lg bg-[var(--sk-surface-2)] hover:bg-[var(--sk-surface-3)] transition-colors text-[var(--sk-text-muted)]"
-            >
-              {hidden ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-            </button>
-          </div>
         </div>
 
-        {/* Balance */}
+        {/* Balance — tap the saldo number itself to hide/show, eye icon is the affordance.
+            This brings the toggle into the thumb-zone and removes the awkward top-right
+            corner button users had to stretch for. */}
         <div className="mb-1">
           <p className="text-xs font-medium text-[var(--sk-text-muted)] uppercase tracking-widest mb-2">
             Saldo Bersih — {period}
           </p>
-          <div
+          <button
+            type="button"
+            onClick={() => setHidden(h => !h)}
+            aria-label={hidden ? 'Tampilkan saldo' : 'Sembunyikan saldo'}
+            aria-pressed={hidden}
             className={cn(
-              'text-4xl md:text-5xl font-bold tracking-tight tabular-nums leading-none transition-all duration-300',
+              'group flex items-baseline gap-2.5 text-left transition-all duration-300 active:scale-[0.98]',
+              'text-4xl md:text-5xl font-bold tracking-tight tabular-nums leading-none',
               balanceIsPositive ? 'text-[var(--sk-text)]' : 'text-[var(--sk-red)]'
             )}
             data-amount
@@ -75,7 +76,13 @@ export function BalanceHeader({
             ) : (
               <span>{formatIDR(totalBalance)}</span>
             )}
-          </div>
+            <span
+              aria-hidden
+              className="text-[var(--sk-text-dim)] group-hover:text-[var(--sk-text-muted)] transition-colors translate-y-[2px]"
+            >
+              {hidden ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+            </span>
+          </button>
         </div>
 
         {/* Savings rate badge */}

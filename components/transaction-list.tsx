@@ -5,11 +5,13 @@ import { formatRelativeDate } from '@/lib/parser'
 import type { Transaction } from '@/lib/mock-data'
 import { TransactionItem } from './transaction-item'
 import { ReceiptText } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
 interface TransactionListProps {
   transactions: Transaction[]
   onDelete?: (id: string) => void
   newTransactionId?: string | null
+  className?: string
 }
 
 interface GroupedTransactions {
@@ -22,6 +24,7 @@ export function TransactionList({
   transactions,
   onDelete,
   newTransactionId,
+  className,
 }: TransactionListProps) {
   const grouped = useMemo<GroupedTransactions[]>(() => {
     const map = new Map<string, Transaction[]>()
@@ -65,7 +68,7 @@ export function TransactionList({
   }
 
   return (
-    <div className="flex flex-col gap-5 px-4 md:px-8 pb-2">
+    <div className={cn('flex flex-col gap-5 px-4 md:px-8 pb-2', className)}>
       {grouped.map(group => (
         <section key={group.dateKey} aria-label={`Transaksi ${group.label}`}>
           {/* Date heading */}
