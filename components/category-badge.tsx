@@ -32,6 +32,11 @@ export const CATEGORY_CONFIG: Record<Category, CategoryConfig> = {
   tagihan:      { icon: Zap,             label: 'Tagihan',       color: 'text-[var(--sk-cyan)]',    bg: 'bg-[var(--sk-cyan-dim)]' },
   gaji:         { icon: Briefcase,       label: 'Gaji/Usaha',    color: 'text-[var(--sk-green)]',   bg: 'bg-[var(--sk-green-dim)]' },
   investasi:    { icon: TrendingUp,      label: 'Investasi',     color: 'text-[#34D399]',           bg: 'bg-[var(--sk-green-dim)]' },
+  penjualan:    { icon: TrendingUp,      label: 'Penjualan',     color: 'text-[#2DD4BF]',           bg: 'bg-[rgba(45,212,191,0.12)]' },
+  cashback:     { icon: ArrowRightLeft,  label: 'Cashback',      color: 'text-[#38BDF8]',           bg: 'bg-[var(--sk-cyan-dim)]' },
+  refund:       { icon: ArrowRightLeft,  label: 'Refund',        color: 'text-[#60A5FA]',           bg: 'bg-[rgba(96,165,250,0.12)]' },
+  hadiah:       { icon: Tag,             label: 'Hadiah',        color: 'text-[#FBBF24]',           bg: 'bg-[rgba(251,191,36,0.12)]' },
+  freelance:    { icon: Briefcase,       label: 'Freelance',     color: 'text-[#34D399]',           bg: 'bg-[var(--sk-green-dim)]' },
   transfer:     { icon: ArrowRightLeft,  label: 'Transfer',      color: 'text-[var(--sk-text-muted)]', bg: 'bg-[var(--sk-surface-3)]' },
   lainnya:      { icon: MoreHorizontal,  label: 'Lainnya',       color: 'text-[var(--sk-text-muted)]', bg: 'bg-[var(--sk-surface-3)]' },
 }
@@ -118,6 +123,11 @@ export const CATEGORY_HEX: Record<string, string> = {
   tagihan: '#38BDF8',
   gaji: '#34D399',
   investasi: '#2DD4BF',
+  penjualan: '#2DD4BF',
+  cashback: '#38BDF8',
+  refund: '#60A5FA',
+  hadiah: '#FBBF24',
+  freelance: '#34D399',
   transfer: '#6B7B9E',
   lainnya: '#6B7B9E',
 }
@@ -157,23 +167,5 @@ export function CategoryIcon({ category, size = 'md', className }: CategoryIconP
     >
       <Icon className={cn(config.color, s.icon)} />
     </div>
-  )
-}
-
-interface SyncDotProps {
-  status?: 'synced' | 'syncing' | 'error'
-}
-
-export function SyncDot({ status = 'synced' }: SyncDotProps) {
-  if (status === 'synced') return null
-  return (
-    <span
-      aria-label={status === 'syncing' ? 'Menyinkronkan...' : 'Gagal sinkronisasi'}
-      className={cn(
-        'inline-flex w-1.5 h-1.5 rounded-full flex-shrink-0',
-        status === 'syncing' && 'bg-[var(--sk-amber)] animate-pulse-soft',
-        status === 'error' && 'bg-[var(--sk-red)]'
-      )}
-    />
   )
 }
