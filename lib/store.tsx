@@ -1,12 +1,10 @@
 'use client'
 
 /**
- * SakuKilat — Mock Supabase Store
+ * SakuKilat local-first store
  * ---------------------------------
- * Simulates Supabase Auth + Database entirely in React state so the whole
- * app (all 4 tabs) is clickable & testable immediately, with zero backend.
- *
- * Swap points for the real Supabase client are marked with `// SUPABASE:`.
+ * Data is stored in this browser via localStorage. Google login identifies
+ * the user, but transaction sync between devices is not wired yet.
  */
 
 import {
@@ -24,7 +22,6 @@ import {
   createSeedTransactions,
   createSeedWallets,
   generateId,
-  mockSupabaseMutate,
   type Transaction,
   type TransactionKind,
   type WalletAccount,
@@ -67,6 +64,11 @@ export interface Toast {
   }
 }
 
+export interface TransactionUpdateInput {
+  description: string
+  amount: number
+}
+
 export type ThemeMode = 'system' | 'dark' | 'light'
 
 interface StoreValue {
@@ -79,6 +81,7 @@ interface StoreValue {
   // data
   transactions: Transaction[]
   addTransaction: (input: string) => Promise<boolean>
+  updateTransaction: (id: string, updates: TransactionUpdateInput) => void
   deleteTransaction: (id: string) => void
   newTransactionId: string | null
   isSubmitting: boolean
@@ -114,7 +117,7 @@ interface StoreValue {
 
   // feedback
   toast: Toast | null
-  showToast: (text: string, type: 'success' | 'error', action?: Toast['action']) => void
+  showToast: (text: string, type: 'success' | 'error', action?: Toast['action'], durationMs?: number) => void
   dismissToast: () => void
 }
 
@@ -132,6 +135,7 @@ interface TransactionDataStore {
 
 interface TransactionActionsStore {
   addTransaction: (input: string) => Promise<boolean>
+  updateTransaction: (id: string, updates: TransactionUpdateInput) => void
   deleteTransaction: (id: string) => void
 }
 
@@ -174,7 +178,7 @@ interface PreferenceStore {
 
 interface FeedbackStore {
   toast: Toast | null
-  showToast: (text: string, type: 'success' | 'error', action?: Toast['action']) => void
+  showToast: (text: string, type: 'success' | 'error', action?: Toast['action'], durationMs?: number) => void
   dismissToast: () => void
 }
 
@@ -363,6 +367,12 @@ function walletDropsBelowZero(wallets: WalletAccount[], transaction: Transaction
   })
 }
 
+function triggerHaptic(duration = 35) {
+  if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+    navigator.vibrate(duration)
+  }
+}
+
 // ── Provider ─────────────────────────────────────────────────────────────────
 export function StoreProvider({ children }: { children: ReactNode }) {
   const persistedStateRef = useRef<PersistedState | null>(null)
@@ -403,13 +413,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     toastTimerRef.current = null
   }, [])
 
-  const showToast = useCallback((text: string, type: 'success' | 'error', action?: Toast['action']) => {
+  const showToast = useCallback((text: string, type: 'success' | 'error', action?: Toast['action'], durationMs?: number) => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
     setToast({ text, type, action })
     toastTimerRef.current = setTimeout(() => {
       setToast(null)
       toastTimerRef.current = null
-    }, 3000)
+    }, durationMs ?? (action ? 5500 : 3000))
   }, [])
 
   useEffect(() => {
@@ -667,24 +677,26 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         fromWalletId,
         toWalletId,
         date: new Date(),
-        syncStatus: 'synced',
       }
+
+      if (walletDropsBelowZero(wallets, move)) return null
 
       setWallets(prev => adjustWallets(prev, transactionImpact(move, 1)))
       setTransactions(prev => [move, ...prev])
       setLastActiveWalletId(fromWalletId)
       setNewTransactionId(id)
+      triggerHaptic()
       setTimeout(() => setNewTransactionId(null), 700)
       return move
     },
-    []
+    [wallets]
   )
 
   const transferMoney = useCallback(
     (fromWalletId: string, toWalletId: string, amount: number, note = 'Pindah uang', kind: TransactionKind = 'transfer') => {
       const move = createMove(fromWalletId, toWalletId, amount, note, kind)
       if (!move) {
-        showToast('Pindah uang belum valid.', 'error')
+        showToast('Pindah uang belum valid atau saldo saku asal tidak cukup.', 'error')
         return false
       }
       showToast(kind === 'saving' ? 'Uang disimpan. Pelan-pelan jadi tebal.' : 'Uang dipindahkan.', 'success')
@@ -732,9 +744,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         type: parsed.type,
         category: parsed.category,
         paymentMethod: parsed.paymentMethod,
-        date: new Date(),
-        isPending: true,
-        syncStatus: 'syncing',
+        date: parsed.date ?? new Date(),
+      }
+
+      if (optimistic.type === 'expense' && walletDropsBelowZero(wallets, optimistic)) {
+        showToast('Saldo saku ini tidak cukup. Pilih saku lain atau tambah saldo dulu.', 'error')
+        setIsSubmitting(false)
+        return false
       }
 
       // Step 1 — instant local update
@@ -752,22 +768,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         navigator.vibrate(40)
       }
       setTimeout(() => setNewTransactionId(null), 700)
-
-      // Step 2 — background "Supabase" mutation
-      // SUPABASE: await supabase.from('transactions').insert(...)
-      void mockSupabaseMutate(optimistic).then(result => {
-        if (result.success) {
-          setTransactions(prev =>
-            prev.map(t => (t.id === optimisticId ? { ...t, isPending: false, syncStatus: 'synced' } : t))
-          )
-          showToast('Tercatat! Santai, kamu pegang kendali.', 'success')
-        } else {
-          setTransactions(prev =>
-            prev.map(t => (t.id === optimisticId ? { ...t, isPending: false, syncStatus: 'error' } : t))
-          )
-          showToast('Sinkronisasi gagal, akan dicoba lagi.', 'error')
-        }
-      })
+      showToast(
+        'Tercatat di perangkat ini.',
+        'success',
+        {
+          label: 'Urungkan',
+          onClick: () => {
+            setTransactions(prev => prev.filter(t => t.id !== optimisticId))
+            setWallets(prev => adjustWallets(prev, transactionImpact(optimistic, -1)))
+            showToast('Transaksi diurungkan.', 'success')
+          },
+        },
+        5500
+      )
       return true
     },
     [parserExtras, showToast, transferMoney, wallets]
@@ -775,18 +788,67 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const deleteTransaction = useCallback(
     (id: string) => {
-      // SUPABASE: await supabase.from('transactions').delete().eq('id', id)
       const transaction = transactions.find(t => t.id === id)
-      if (transaction) {
-        setWallets(prev => adjustWallets(prev, transactionImpact(transaction, -1)))
-      }
+      if (!transaction) return
+
+      setWallets(prev => adjustWallets(prev, transactionImpact(transaction, -1)))
       setTransactions(prev => prev.filter(t => t.id !== id))
-      showToast('Transaksi dihapus.', 'success')
+      triggerHaptic(25)
+      showToast(
+        'Transaksi dihapus.',
+        'success',
+        {
+          label: 'Urungkan',
+          onClick: () => {
+            setTransactions(prev => prev.some(t => t.id === transaction.id) ? prev : [transaction, ...prev])
+            setWallets(prev => adjustWallets(prev, transactionImpact(transaction, 1)))
+            showToast('Transaksi dikembalikan.', 'success')
+          },
+        },
+        5500
+      )
     },
     [transactions, showToast]
   )
 
   // ── Custom slang management ──────────────────────────────────────────────────
+  const updateTransaction = useCallback(
+    (id: string, updates: TransactionUpdateInput) => {
+      const transaction = transactions.find(t => t.id === id)
+      if (!transaction) return
+
+      const description = updates.description.trim()
+      const amount = Math.round(updates.amount)
+      if (!description || !Number.isFinite(amount) || amount <= 0) {
+        showToast('Deskripsi dan nominal harus valid.', 'error')
+        return
+      }
+
+      const updated: Transaction = {
+        ...transaction,
+        description,
+        amount,
+        isPending: false,
+      }
+      const walletsWithoutCurrent = adjustWallets(wallets, transactionImpact(transaction, -1))
+      if (walletDropsBelowZero(walletsWithoutCurrent, updated)) {
+        showToast('Perubahan ini membuat saldo saku minus.', 'error')
+        return
+      }
+
+      setTransactions(prev => prev.map(t => (t.id === id ? updated : t)))
+      setWallets(prev =>
+        adjustWallets(
+          adjustWallets(prev, transactionImpact(transaction, -1)),
+          transactionImpact(updated, 1)
+        )
+      )
+      triggerHaptic(25)
+      showToast('Transaksi diperbarui.', 'success')
+    },
+    [transactions, wallets, showToast]
+  )
+
   const addCustomPayment = useCallback(
     (label: string, keywords: string[]) => {
       const id = slugify(label)
@@ -842,8 +904,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   )
 
   const transactionActionsValue = useMemo<TransactionActionsStore>(
-    () => ({ addTransaction, deleteTransaction }),
-    [addTransaction, deleteTransaction]
+    () => ({ addTransaction, updateTransaction, deleteTransaction }),
+    [addTransaction, updateTransaction, deleteTransaction]
   )
 
   const transactionStatusValue = useMemo<TransactionStatusStore>(
@@ -909,6 +971,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       updateProfile,
       transactions,
       addTransaction,
+      updateTransaction,
       deleteTransaction,
       newTransactionId,
       isSubmitting,
@@ -938,7 +1001,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }),
     [
       user, authReady, signInWithGoogle, signOut, updateProfile,
-      transactions, addTransaction, deleteTransaction, newTransactionId, isSubmitting,
+      transactions, addTransaction, updateTransaction, deleteTransaction, newTransactionId, isSubmitting,
       wallets, totalStored, addWallet, updateWallet, removeWallet, transferMoney, saveMoney,
       monthlyBudget, setMonthlyBudget,
       customPayments, customCategories, addCustomPayment, removeCustomPayment,
@@ -1017,3 +1080,4 @@ export function usePreferenceStore(): PreferenceStore {
 export function useFeedbackStore(): FeedbackStore {
   return useRequiredContext(FeedbackContext, 'useFeedbackStore')
 }
+
