@@ -24,7 +24,6 @@ export interface Transaction {
   toWalletId?: string
   date: Date
   isPending?: boolean // optimistic UI state
-  syncStatus?: 'synced' | 'syncing' | 'error'
 }
 
 export const SEED_WALLETS: WalletAccount[] = [
@@ -52,7 +51,6 @@ function createMockTransactions(now: number): Transaction[] {
     category: 'makanan',
     paymentMethod: 'gopay',
     date: new Date(now - 1 * 60 * 60 * 1000), // 1 jam lalu
-    syncStatus: 'synced',
   },
   {
     id: 'txn-002',
@@ -62,7 +60,6 @@ function createMockTransactions(now: number): Transaction[] {
     category: 'gaji',
     paymentMethod: 'transfer',
     date: new Date(now - 2 * 60 * 60 * 1000),
-    syncStatus: 'synced',
   },
   {
     id: 'txn-003',
@@ -72,7 +69,6 @@ function createMockTransactions(now: number): Transaction[] {
     category: 'transportasi',
     paymentMethod: 'tunai',
     date: new Date(now - 5 * 60 * 60 * 1000),
-    syncStatus: 'synced',
   },
   {
     id: 'txn-004',
@@ -82,7 +78,6 @@ function createMockTransactions(now: number): Transaction[] {
     category: 'makanan',
     paymentMethod: 'ovo',
     date: new Date(now - 1 * 24 * 60 * 60 * 1000), // Kemarin
-    syncStatus: 'synced',
   },
   {
     id: 'txn-005',
@@ -92,7 +87,6 @@ function createMockTransactions(now: number): Transaction[] {
     category: 'tagihan',
     paymentMethod: 'bca',
     date: new Date(now - 1 * 24 * 60 * 60 * 1000),
-    syncStatus: 'synced',
   },
   {
     id: 'txn-006',
@@ -102,7 +96,6 @@ function createMockTransactions(now: number): Transaction[] {
     category: 'hiburan',
     paymentMethod: 'kartu',
     date: new Date(now - 2 * 24 * 60 * 60 * 1000),
-    syncStatus: 'synced',
   },
   {
     id: 'txn-007',
@@ -112,17 +105,15 @@ function createMockTransactions(now: number): Transaction[] {
     category: 'belanja',
     paymentMethod: 'shopeepay',
     date: new Date(now - 3 * 24 * 60 * 60 * 1000),
-    syncStatus: 'synced',
   },
   {
     id: 'txn-008',
     description: 'Freelance desain logo',
     amount: 1_500_000,
     type: 'income',
-    category: 'gaji',
+    category: 'freelance',
     paymentMethod: 'transfer',
     date: new Date(now - 4 * 24 * 60 * 60 * 1000),
-    syncStatus: 'synced',
   },
   {
     id: 'txn-009',
@@ -132,7 +123,6 @@ function createMockTransactions(now: number): Transaction[] {
     category: 'transportasi',
     paymentMethod: 'dana',
     date: new Date(now - 4 * 24 * 60 * 60 * 1000),
-    syncStatus: 'synced',
   },
   {
     id: 'txn-010',
@@ -142,7 +132,6 @@ function createMockTransactions(now: number): Transaction[] {
     category: 'kesehatan',
     paymentMethod: 'bri',
     date: new Date(now - 5 * 24 * 60 * 60 * 1000),
-    syncStatus: 'synced',
   },
   ]
 }
@@ -151,16 +140,16 @@ function createMockTransactions(now: number): Transaction[] {
 // Deterministically spreads realistic transactions across the past ~90 days so
 // the calendar heatmap & trend charts have rich, believable data on first load.
 const HISTORY_TEMPLATES: Array<Omit<Transaction, 'id' | 'date'>> = [
-  { description: 'Kopi pagi',        amount: 22_000,  type: 'expense', category: 'makanan',      paymentMethod: 'gopay',     syncStatus: 'synced' },
-  { description: 'Makan siang',      amount: 35_000,  type: 'expense', category: 'makanan',      paymentMethod: 'ovo',       syncStatus: 'synced' },
-  { description: 'Ojek ke kantor',   amount: 24_000,  type: 'expense', category: 'transportasi', paymentMethod: 'gopay',     syncStatus: 'synced' },
-  { description: 'Bensin motor',     amount: 30_000,  type: 'expense', category: 'transportasi', paymentMethod: 'tunai',     syncStatus: 'synced' },
-  { description: 'Belanja bulanan',  amount: 185_000, type: 'expense', category: 'belanja',      paymentMethod: 'bca',       syncStatus: 'synced' },
-  { description: 'Pulsa & data',     amount: 50_000,  type: 'expense', category: 'tagihan',      paymentMethod: 'dana',      syncStatus: 'synced' },
-  { description: 'Nonton bioskop',   amount: 60_000,  type: 'expense', category: 'hiburan',      paymentMethod: 'shopeepay', syncStatus: 'synced' },
-  { description: 'Beli camilan',     amount: 28_000,  type: 'expense', category: 'makanan',      paymentMethod: 'qris',      syncStatus: 'synced' },
-  { description: 'Vitamin',          amount: 75_000,  type: 'expense', category: 'kesehatan',    paymentMethod: 'bca',       syncStatus: 'synced' },
-  { description: 'Parkir mall',      amount: 10_000,  type: 'expense', category: 'transportasi', paymentMethod: 'tunai',     syncStatus: 'synced' },
+  { description: 'Kopi pagi',        amount: 22_000,  type: 'expense', category: 'makanan',      paymentMethod: 'gopay' },
+  { description: 'Makan siang',      amount: 35_000,  type: 'expense', category: 'makanan',      paymentMethod: 'ovo' },
+  { description: 'Ojek ke kantor',   amount: 24_000,  type: 'expense', category: 'transportasi', paymentMethod: 'gopay' },
+  { description: 'Bensin motor',     amount: 30_000,  type: 'expense', category: 'transportasi', paymentMethod: 'tunai' },
+  { description: 'Belanja bulanan',  amount: 185_000, type: 'expense', category: 'belanja',      paymentMethod: 'bca' },
+  { description: 'Pulsa & data',     amount: 50_000,  type: 'expense', category: 'tagihan',      paymentMethod: 'dana' },
+  { description: 'Nonton bioskop',   amount: 60_000,  type: 'expense', category: 'hiburan',      paymentMethod: 'shopeepay' },
+  { description: 'Beli camilan',     amount: 28_000,  type: 'expense', category: 'makanan',      paymentMethod: 'qris' },
+  { description: 'Vitamin',          amount: 75_000,  type: 'expense', category: 'kesehatan',    paymentMethod: 'bca' },
+  { description: 'Parkir mall',      amount: 10_000,  type: 'expense', category: 'transportasi', paymentMethod: 'tunai' },
 ]
 
 function generateHistory(now: number): Transaction[] {
@@ -201,7 +190,6 @@ function generateHistory(now: number): Transaction[] {
       category: 'gaji',
       paymentMethod: 'transfer',
       date: d,
-      syncStatus: 'synced',
     })
   }
 
@@ -228,17 +216,3 @@ export function generateId(): string {
   return `txn-${Date.now()}-${random}`
 }
 
-// ── Simulate Supabase async mutation ────────────────────────────────────────
-export async function mockSupabaseMutate(
-  transaction: Transaction,
-  shouldFail = false
-): Promise<{ success: boolean; error?: string }> {
-  // Simulate network delay
-  await new Promise(res => setTimeout(res, 800 + Math.random() * 400))
-
-  if (shouldFail) {
-    return { success: false, error: 'Koneksi gagal, mencoba lagi...' }
-  }
-
-  return { success: true }
-}
