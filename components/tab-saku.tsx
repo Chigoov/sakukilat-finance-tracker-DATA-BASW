@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { ArrowRightLeft, Check, Gauge, Landmark, Pencil, PiggyBank, Plus, Trash2, Wallet, X } from 'lucide-react'
 import { useBudgetStore, useWalletStore } from '@/lib/store'
+import { GoalTracker } from '@/components/goal-tracker'
 import { formatIDR, formatIDRCompact } from '@/lib/parser'
 import { parseAmountInput } from '@/lib/amount'
 import type { WalletType } from '@/lib/mock-data'
@@ -369,6 +370,7 @@ export function TabSaku() {
 
       <div className="flex-1 px-4 md:px-8 py-5 flex flex-col gap-6 pb-10">
         <BudgetSettings />
+        <GoalTracker />
         <WalletManager />
         <MoneyMovePanel />
       </div>
