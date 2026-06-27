@@ -200,7 +200,7 @@ const SEED_PAYMENTS: CustomPayment[] = [
 const SEED_CATEGORIES: CustomCategory[] = [
   { id: 'peliharaan', label: 'Peliharaan', keywords: ['kucing', 'anjing', 'catfood', 'vet', 'grooming'] },
 ]
-const DEFAULT_MONTHLY_BUDGET = 1_500_000
+const DEFAULT_MONTHLY_BUDGET = 0
 const STORAGE_KEY = 'sakukilat:v2:local-state'
 const DEMO_USER: MockUser = {
   name: 'Teman SakuKilat',
