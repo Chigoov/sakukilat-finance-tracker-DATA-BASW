@@ -221,7 +221,37 @@ interface PersistedState {
   profileName?: string | null
 }
 
-const CURRENT_SCHEMA_VERSION = 2
+const CURRENT_SCHEMA_VERSION = 3
+
+// ── v2 → v3 demo-data purge helpers ─────────────────────────────────────────
+// Old builds shipped with hard-coded seed transactions and pre-filled wallet
+// balances. Any user / tester who opened the previous version still has that
+// data in localStorage, so even after the clean-slate commit they keep seeing
+// dummy entries. v3 migrates them away — surgically, never destructively.
+
+/** Old createMockTransactions used ids `txn-001`..`txn-010`. Old
+ *  generateHistory used `seed-{daysAgo}-{j}` and `seed-income-{m}`. Live
+ *  user input goes through generateId() which uses `txn-{epochMs}-{random}`,
+ *  so the patterns below cannot collide with real data. */
+function isLegacySeedTransactionId(id: unknown): boolean {
+  if (typeof id !== 'string') return false
+  return /^txn-0\d{2}$/.test(id) || id.startsWith('seed-')
+}
+
+/** Exact balances shipped with the previous SEED_WALLETS. If every wallet in
+ *  the persisted state matches verbatim, the user never touched the wallet
+ *  manager → it's safe to zero them. The moment any value differs we leave
+ *  ALL of them alone, because at that point real bookkeeping is at stake. */
+const LEGACY_WALLET_BALANCES: Record<string, number> = {
+  tunai:     650_000,
+  bca:       4_850_000,
+  seabank:   1_200_000,
+  gopay:     240_000,
+  ovo:       185_000,
+  dana:      165_000,
+  shopeepay: 90_000,
+  tabungan:  2_500_000,
+}
 
 function reviveTransactions(items: PersistedState['transactions']): Transaction[] | null {
   if (!Array.isArray(items)) return null
@@ -235,9 +265,40 @@ function reviveTransactions(items: PersistedState['transactions']): Transaction[
 }
 
 function migratePersistedState(state: PersistedState): PersistedState {
-  // Future migrations dispatch by version. Today every version <= 2 is
-  // compatible; we just stamp the version so subsequent migrations can rely on it.
-  return { ...state, schemaVersion: CURRENT_SCHEMA_VERSION }
+  const prevVersion = state.schemaVersion ?? 1
+  const next: PersistedState = { ...state }
+
+  if (prevVersion < 3) {
+    // 1. Strip leftover seed transactions. User-entered ones (timestamp ids)
+    //    survive untouched — `isLegacySeedTransactionId` only matches the
+    //    fixed pre-baked patterns.
+    if (Array.isArray(next.transactions)) {
+      next.transactions = next.transactions.filter(t => !isLegacySeedTransactionId(t.id))
+    }
+
+    // 2. Zero out wallet balances ONLY if every wallet still has the exact
+    //    pre-baked seed amount. Any divergence → user has been bookkeeping
+    //    here, leave the whole thing alone.
+    if (Array.isArray(next.wallets) && next.wallets.length > 0) {
+      const allPristine = next.wallets.every(w => {
+        const expected = LEGACY_WALLET_BALANCES[w.id]
+        // Wallets the user has added themselves won't appear in the legacy
+        // table — those don't count as "untouched seed" so we treat them
+        // as user data and bail out of the reset.
+        return expected !== undefined && w.balance === expected
+      })
+      if (allPristine) {
+        next.wallets = next.wallets.map(w => ({ ...w, balance: 0 }))
+      }
+    }
+
+    // 3. Reset monthlyBudget only if it's still the old hard-coded default.
+    if (next.monthlyBudget === 1_500_000) {
+      next.monthlyBudget = 0
+    }
+  }
+
+  return { ...next, schemaVersion: CURRENT_SCHEMA_VERSION }
 }
 
 function loadPersistedState(): PersistedState {
