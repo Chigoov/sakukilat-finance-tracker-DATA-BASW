@@ -1,21 +1,26 @@
 'use client'
 
 import { useState } from 'react'
-import { ArrowRightLeft, ChevronRight, PiggyBank, Trash2 } from 'lucide-react'
+import { ArrowRightLeft, Check, ChevronRight, Pencil, PiggyBank, Trash2, X } from 'lucide-react'
 import { formatIDR, formatTime } from '@/lib/parser'
 import type { Transaction } from '@/lib/mock-data'
-import { CategoryIcon, SyncDot, getCategoryConfig, getPaymentLabel } from './category-badge'
+import type { TransactionUpdateInput } from '@/lib/store'
+import { CategoryIcon, getCategoryConfig, getPaymentLabel } from './category-badge'
 import { cn } from '@/lib/utils'
 
 interface TransactionItemProps {
   transaction: Transaction
   onDelete?: (id: string) => void
+  onUpdate?: (id: string, updates: TransactionUpdateInput) => void
   isNew?: boolean
 }
 
-export function TransactionItem({ transaction, onDelete, isNew }: TransactionItemProps) {
+export function TransactionItem({ transaction, onDelete, onUpdate, isNew }: TransactionItemProps) {
   const [expanded, setExpanded] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [editDescription, setEditDescription] = useState(transaction.description)
+  const [editAmount, setEditAmount] = useState(String(transaction.amount))
 
   const kind = transaction.kind ?? 'transaction'
   const isMove = kind === 'transfer' || kind === 'saving'
@@ -32,6 +37,30 @@ export function TransactionItem({ transaction, onDelete, isNew }: TransactionIte
     setTimeout(() => {
       onDelete?.(transaction.id)
     }, 300)
+  }
+
+  const startEdit = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setExpanded(true)
+    setEditing(true)
+    setEditDescription(transaction.description)
+    setEditAmount(String(transaction.amount))
+  }
+
+  const cancelEdit = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setEditing(false)
+    setEditDescription(transaction.description)
+    setEditAmount(String(transaction.amount))
+  }
+
+  const saveEdit = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    onUpdate?.(transaction.id, {
+      description: editDescription,
+      amount: Number(editAmount),
+    })
+    setEditing(false)
   }
 
   return (
@@ -72,7 +101,6 @@ export function TransactionItem({ transaction, onDelete, isNew }: TransactionIte
             <span className="text-sm font-medium text-[var(--sk-text)] truncate leading-tight capitalize">
               {transaction.description}
             </span>
-            <SyncDot status={transaction.syncStatus} />
           </div>
           <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 mt-0.5">
             <span className="text-xs text-[var(--sk-text-muted)] shrink-0">
@@ -137,32 +165,75 @@ export function TransactionItem({ transaction, onDelete, isNew }: TransactionIte
               </div>
               <div>
                 <span className="text-[var(--sk-text-dim)] block mb-0.5">Status</span>
-                <span className={cn(
-                  'font-medium',
-                  transaction.syncStatus === 'synced' && 'text-[var(--sk-green)]',
-                  transaction.syncStatus === 'syncing' && 'text-[var(--sk-amber)]',
-                  transaction.syncStatus === 'error' && 'text-[var(--sk-red)]',
-                  !transaction.syncStatus && 'text-[var(--sk-text-muted)]'
-                )}>
-                  {transaction.isPending
-                    ? 'Menyimpan...'
-                    : transaction.syncStatus === 'synced' ? 'Tersimpan'
-                    : transaction.syncStatus === 'syncing' ? 'Menyinkronkan'
-                    : transaction.syncStatus === 'error' ? 'Gagal'
-                    : 'Lokal'}
+                <span className="font-medium text-[var(--sk-text-muted)]">
+                  {transaction.isPending ? 'Menyimpan...' : 'Lokal di perangkat ini'}
                 </span>
               </div>
             </div>
 
-            {onDelete && !transaction.isPending && (
-              <button
-                onClick={handleDelete}
-                className="mt-3 flex items-center gap-1.5 text-xs text-[var(--sk-text-muted)] hover:text-[var(--sk-red)] transition-colors py-1"
-                aria-label="Hapus transaksi"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                Hapus transaksi
-              </button>
+            {editing && (
+              <div className="mt-3 grid gap-2" onClick={e => e.stopPropagation()}>
+                <input
+                  value={editDescription}
+                  onChange={e => setEditDescription(e.target.value)}
+                  className="h-10 rounded-lg bg-[var(--sk-surface-2)] border border-[var(--sk-border)] px-3 text-sm text-[var(--sk-text)] outline-none focus:border-[var(--sk-cyan)]"
+                  aria-label="Edit deskripsi transaksi"
+                />
+                <input
+                  value={editAmount}
+                  onChange={e => setEditAmount(e.target.value)}
+                  inputMode="numeric"
+                  className="h-10 rounded-lg bg-[var(--sk-surface-2)] border border-[var(--sk-border)] px-3 text-sm text-[var(--sk-text)] outline-none focus:border-[var(--sk-cyan)]"
+                  aria-label="Edit nominal transaksi"
+                />
+              </div>
+            )}
+
+            {(onUpdate || onDelete) && !transaction.isPending && (
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                {editing ? (
+                  <>
+                    <button
+                      onClick={saveEdit}
+                      className="min-h-9 px-3 rounded-lg bg-[var(--sk-cyan-dim)] text-[var(--sk-cyan)] text-xs font-semibold flex items-center gap-1.5"
+                      aria-label="Simpan perubahan transaksi"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      Simpan
+                    </button>
+                    <button
+                      onClick={cancelEdit}
+                      className="min-h-9 px-3 rounded-lg bg-[var(--sk-surface-2)] text-[var(--sk-text-muted)] text-xs font-semibold flex items-center gap-1.5"
+                      aria-label="Batalkan edit transaksi"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                      Batal
+                    </button>
+                  </>
+                ) : (
+                  onUpdate && (
+                    <button
+                      onClick={startEdit}
+                      className="min-h-9 px-3 rounded-lg bg-[var(--sk-surface-2)] text-[var(--sk-text-muted)] hover:text-[var(--sk-cyan)] transition-colors text-xs font-semibold flex items-center gap-1.5"
+                      aria-label="Edit transaksi"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                      Edit
+                    </button>
+                  )
+                )}
+
+                {onDelete && !editing && (
+                  <button
+                    onClick={handleDelete}
+                    className="min-h-9 px-3 rounded-lg bg-[var(--sk-surface-2)] text-[var(--sk-text-muted)] hover:text-[var(--sk-red)] transition-colors text-xs font-semibold flex items-center gap-1.5"
+                    aria-label="Hapus transaksi"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Hapus
+                  </button>
+                )}
+              </div>
             )}
           </div>
         </div>
