@@ -6,10 +6,9 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
   PieChart, Pie, Cell,
 } from 'recharts'
-import { ChevronLeft, ChevronRight, Search, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, X } from 'lucide-react'
 import { useTransactionActions, useTransactionData } from '@/lib/store'
 import { TransactionItem } from '@/components/transaction-item'
-import { TransactionList } from '@/components/transaction-list'
 import {
   dailyAggregates, transactionsForDay, trendSeries, topSavedCategory,
   categoryBreakdown, monthlyTotals,
@@ -20,7 +19,7 @@ import { dayKey } from '@/lib/stats'
 import { getCategoryConfig, getCategoryHex } from '@/components/category-badge'
 import { cn } from '@/lib/utils'
 
-type RekapView = 'kalender' | 'tren' | 'riwayat'
+type RekapView = 'kalender' | 'tren'
 
 const DAYS_SHORT = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab']
 const MONTHS_ID = [
@@ -65,7 +64,7 @@ function ChartTooltip({ active, payload, label }: {
 // ── Calendar view ─────────────────────────────────────────────────────────────
 function CalendarView() {
   const { transactions } = useTransactionData()
-  const { deleteTransaction } = useTransactionActions()
+  const { deleteTransaction, updateTransaction } = useTransactionActions()
   const [month, setMonth] = useState(() => {
     const n = new Date()
     return { year: n.getFullYear(), month: n.getMonth() }
@@ -100,12 +99,15 @@ function CalendarView() {
     return { cells, monthLabel }
   }, [month])
 
-  const maxExpense = useMemo(() => {
-    let max = 0
-    for (const agg of dailyMap.values()) {
-      if (agg.expense > max) max = agg.expense
-    }
-    return max || 1
+  const expenseScale = useMemo(() => {
+    const values = Array.from(dailyMap.values())
+      .map(agg => agg.expense)
+      .filter(value => value > 0)
+      .sort((a, b) => a - b)
+
+    if (values.length === 0) return 1
+    const index = Math.min(values.length - 1, Math.floor(values.length * 0.9))
+    return values[index] || 1
   }, [dailyMap])
 
   const selectedTransactions = useMemo(() =>
@@ -158,9 +160,13 @@ function CalendarView() {
           }
           const agg = dailyMap.get(cell.key)
           const hasData = !!agg
-          const intensity = hasData ? agg.expense / maxExpense : 0
+          const intensity = hasData && agg.expense > 0
+            ? Math.min(1, Math.log1p(agg.expense) / Math.log1p(expenseScale))
+            : 0
           const isToday = cell.key === today
           const isSelected = cell.key === selectedDay
+          const dominantAmount = agg ? Math.max(agg.expense, agg.income) : 0
+          const dominantTone = agg && agg.income > agg.expense ? 'income' : 'expense'
 
           return (
             <button
@@ -195,11 +201,11 @@ function CalendarView() {
                         : `rgba(248,113,113,${0.4 + intensity * 0.6})`
                     }}
                   />
-                  <span className="text-[8px] leading-none tabular-nums text-[var(--sk-red)] max-w-full truncate">
-                    {agg.expense > 0 ? formatIDRCompact(agg.expense).replace('Rp ', '') : ''}
-                  </span>
-                  <span className="text-[8px] leading-none tabular-nums text-[var(--sk-green)] max-w-full truncate">
-                    {agg.income > 0 ? formatIDRCompact(agg.income).replace('Rp ', '') : ''}
+                  <span className={cn(
+                    'text-[11px] leading-none tabular-nums max-w-full truncate',
+                    dominantTone === 'income' ? 'text-[var(--sk-green)]' : 'text-[var(--sk-red)]'
+                  )}>
+                    {formatIDRCompact(dominantAmount).replace('Rp ', '')}
                   </span>
                 </>
               )}
@@ -246,7 +252,7 @@ function CalendarView() {
               <p className="text-xs text-center text-[var(--sk-text-dim)] py-4">Tidak ada transaksi</p>
             ) : (
               selectedTransactions.map(t => (
-                <TransactionItem key={t.id} transaction={t} onDelete={deleteTransaction} />
+                <TransactionItem key={t.id} transaction={t} onDelete={deleteTransaction} onUpdate={updateTransaction} />
               ))
             )}
           </div>
@@ -565,54 +571,6 @@ function TrenView() {
   )
 }
 
-function RiwayatView() {
-  const { transactions } = useTransactionData()
-  const { deleteTransaction } = useTransactionActions()
-  const [query, setQuery] = useState('')
-
-  const filteredTransactions = useMemo(() => {
-    const needle = query.trim().toLowerCase()
-    if (!needle) return transactions
-
-    return transactions.filter(transaction => {
-      const categoryLabel = getCategoryConfig(transaction.category).label
-      const haystack = [
-        transaction.description,
-        transaction.category,
-        categoryLabel,
-        transaction.paymentMethod,
-        transaction.fromWalletId,
-        transaction.toWalletId,
-        transaction.kind,
-      ].filter(Boolean).join(' ').toLowerCase()
-
-      return haystack.includes(needle)
-    })
-  }, [transactions, query])
-
-  return (
-    <div>
-      <div className="rounded-xl bg-[var(--sk-surface)] border border-[var(--sk-border)] px-3 py-2.5 flex items-center gap-2 mb-4">
-        <Search className="w-4 h-4 text-[var(--sk-text-dim)] flex-shrink-0" />
-        <input
-          value={query}
-          onChange={e => setQuery(e.target.value)}
-          placeholder="Cari kopi, gopay, bca..."
-          className="flex-1 min-w-0 bg-transparent outline-none text-sm text-[var(--sk-text)] placeholder:text-[var(--sk-text-dim)]"
-        />
-        <span className="text-[10px] text-[var(--sk-text-dim)] tabular-nums">
-          {filteredTransactions.length}
-        </span>
-      </div>
-
-      <TransactionList
-        transactions={filteredTransactions}
-        onDelete={deleteTransaction}
-        className="px-0 md:px-0 pb-0"
-      />
-    </div>
-  )
-}
 
 // ── Main tab ──────────────────────────────────────────────────────────────────
 export const TabRekapan = memo(function TabRekapan() {
@@ -625,7 +583,7 @@ export const TabRekapan = memo(function TabRekapan() {
         <h2 className="text-base font-semibold text-[var(--sk-text)] mb-3">Rekapan</h2>
         {/* Toggle */}
         <div className="inline-flex bg-[var(--sk-surface)] rounded-xl p-1 border border-[var(--sk-border)]">
-          {(['kalender', 'tren', 'riwayat'] as RekapView[]).map(v => (
+          {(['kalender', 'tren'] as RekapView[]).map(v => (
             <button
               key={v}
               onClick={() => setView(v)}
@@ -636,7 +594,7 @@ export const TabRekapan = memo(function TabRekapan() {
                   : 'text-[var(--sk-text-dim)] hover:text-[var(--sk-text-muted)]'
               )}
             >
-              {v === 'kalender' ? 'Kalender' : v === 'tren' ? 'Tren' : 'Riwayat'}
+              {v === 'kalender' ? 'Kalender' : 'Tren'}
             </button>
           ))}
         </div>
@@ -645,7 +603,6 @@ export const TabRekapan = memo(function TabRekapan() {
       <div className="flex-1 px-4 md:px-8 pt-5 pb-8">
         {view === 'kalender' && <CalendarView />}
         {view === 'tren' && <TrenView />}
-        {view === 'riwayat' && <RiwayatView />}
       </div>
     </div>
   )
