@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import dynamic from 'next/dynamic'
 import { Home, BarChart2, Wallet, User, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
@@ -13,7 +14,6 @@ import {
 import { AuthGate } from '@/components/auth-gate'
 import { SmartInput } from '@/components/smart-input'
 import { TabBeranda } from '@/components/tab-beranda'
-import { TabRekapan } from '@/components/tab-rekapan'
 import { TabSaku } from '@/components/tab-saku'
 import { TabProfil } from '@/components/tab-profil'
 
@@ -26,6 +26,24 @@ const TABS: { id: Tab; label: string; icon: React.ComponentType<{ className?: st
   { id: 'profil',   label: 'Profil',   icon: User },
 ]
 
+const TabRekapan = dynamic(
+  () => import('@/components/tab-rekapan').then(mod => mod.TabRekapan),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="min-h-[100dvh] px-5 pt-8 text-sm text-[var(--sk-text-muted)]">
+        Memuat rekapan...
+      </div>
+    ),
+  }
+)
+
+function triggerTinyHaptic() {
+  if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+    navigator.vibrate(18)
+  }
+}
+
 function AppShell() {
   const { user, authReady } = useAuthStore()
   const { toast, dismissToast } = useFeedbackStore()
@@ -33,14 +51,18 @@ function AppShell() {
   const { isSubmitting } = useTransactionStatus()
   const { parserExtras } = useCustomizationStore()
   const [activeTab, setActiveTab] = useState<Tab>('beranda')
-
-  // Hydration guard — ensures the first client render matches what the server
-  // emits (a single Splash node). Without this, branching on `authReady`
-  // produced a "tree mismatch" warning + visible flicker on mobile networks.
   const [mounted, setMounted] = useState(false)
-  useEffect(() => setMounted(true), [])
 
-  // Loading splash (server + first client render)
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  const switchTab = (tab: Tab) => {
+    if (tab !== activeTab) triggerTinyHaptic()
+    setActiveTab(tab)
+  }
+
+  // Loading splash
   if (!mounted || !authReady) {
     return (
       <div className="min-h-[100dvh] bg-[var(--sk-bg)] flex items-center justify-center">
@@ -59,15 +81,15 @@ function AppShell() {
   return (
     <div className="min-h-[100dvh] bg-[var(--sk-bg)] flex flex-col">
       {/* ── Tab content area ── */}
-      <main className="flex-1 overflow-y-auto pb-[176px] md:pb-[124px] md:mb-0">
+      <main className="flex-1 overflow-y-auto pb-[150px] md:pb-[112px] md:mb-0">
         {activeTab === 'beranda' && <TabBeranda />}
         {activeTab === 'saku'    && <TabSaku />}
         {activeTab === 'rekapan' && <TabRekapan />}
         {activeTab === 'profil'  && <TabProfil />}
       </main>
 
-      <div className="fixed bottom-[60px] left-0 right-0 z-30 sk-glass border-t border-[var(--sk-border-2)] safe-bottom md:bottom-5 md:left-[96px] md:right-6 md:max-w-2xl md:border md:rounded-2xl md:shadow-2xl">
-        <div className="px-4 py-3 md:px-4">
+      <div className="fixed bottom-[56px] left-0 right-0 z-30 sk-glass border-t border-[var(--sk-border-2)] safe-bottom md:bottom-5 md:left-[96px] md:right-6 md:max-w-2xl md:border md:rounded-2xl md:shadow-2xl">
+        <div className="px-4 py-2.5 md:px-4">
           <SmartInput
             onSubmit={addTransaction}
             isSubmitting={isSubmitting}
@@ -81,14 +103,14 @@ function AppShell() {
         aria-label="Navigasi utama"
         className="fixed bottom-0 left-0 right-0 z-40 sk-glass border-t border-[var(--sk-border-2)] safe-bottom md:hidden"
       >
-        <div className="flex items-stretch h-[60px]">
+        <div className="flex items-stretch h-[56px]">
           {TABS.map(tab => {
             const Icon = tab.icon
             const isActive = activeTab === tab.id
             return (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => switchTab(tab.id)}
                 aria-current={isActive ? 'page' : undefined}
                 aria-label={tab.label}
                 className={cn(
@@ -126,7 +148,7 @@ function AppShell() {
           return (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => switchTab(tab.id)}
               aria-current={isActive ? 'page' : undefined}
               aria-label={tab.label}
               title={tab.label}
@@ -143,24 +165,16 @@ function AppShell() {
         })}
       </nav>
 
-      {/* ── Toast ──
-          Audit fix #6: toast dipindah ke ATAS layar (safe-area aware) supaya
-          tidak menutupi SmartInput preview / tombol Send saat user mengetik
-          transaksi berikutnya berturut-turut. Sebelumnya bottom-[176px] + area
-          input keduanya menumpuk dan saling menutupi selama 3-5 detik.
-
-          Audit fix #4: bila toast.action tersedia (UNDO Snackbar), tombolnya
-          dirender inline di sebelah teks. Klik UNDO langsung memanggil
-          handler dari store (yang me-reverse mutasi & menutup toast). */}
+      {/* ── Toast ── */}
       {toast && (
         <div
           role="status"
           aria-live="polite"
-          className="fixed z-50 animate-slide-up top-4 left-4 right-4 md:top-6 md:left-auto md:right-6 md:w-auto md:max-w-md pt-safe"
+          className="fixed z-50 animate-slide-up top-4 left-4 right-4 md:top-auto md:bottom-[104px] md:left-auto md:right-6 md:w-auto"
         >
           <div
             className={cn(
-              'flex items-center gap-3 px-4 py-3 rounded-xl shadow-2xl text-sm font-medium border backdrop-blur-xl',
+              'flex items-center gap-2.5 px-4 py-3 rounded-xl shadow-2xl text-sm font-medium border backdrop-blur-xl',
               toast.type === 'success'
                 ? 'bg-[var(--sk-green-dim)] border-[rgba(52,211,153,0.3)] text-[var(--sk-green)]'
                 : 'bg-[var(--sk-red-dim)] border-[rgba(248,113,113,0.3)] text-[var(--sk-red)]'
@@ -170,20 +184,15 @@ function AppShell() {
               'inline-block w-2 h-2 rounded-full flex-shrink-0',
               toast.type === 'success' ? 'bg-[var(--sk-green)]' : 'bg-[var(--sk-red)]'
             )} />
-            <span className="flex-1 min-w-0">{toast.text}</span>
+            <span className="min-w-0 flex-1">{toast.text}</span>
             {toast.action && (
               <button
                 type="button"
                 onClick={() => {
-                  toast.action?.onClick()
                   dismissToast()
+                  toast.action?.onClick()
                 }}
-                className={cn(
-                  'flex-shrink-0 text-xs font-bold uppercase tracking-wider px-2 py-1 rounded-md transition-opacity hover:opacity-80',
-                  toast.type === 'success'
-                    ? 'text-[var(--sk-green)] bg-[rgba(52,211,153,0.15)]'
-                    : 'text-[var(--sk-red)] bg-[rgba(248,113,113,0.15)]'
-                )}
+                className="min-h-8 px-2.5 rounded-lg bg-white/10 text-[11px] font-bold uppercase tracking-wide"
               >
                 {toast.action.label}
               </button>
@@ -192,7 +201,7 @@ function AppShell() {
               type="button"
               onClick={dismissToast}
               aria-label="Tutup notifikasi"
-              className="flex-shrink-0 opacity-60 hover:opacity-100 transition-opacity"
+              className="w-8 h-8 -mr-1 rounded-lg flex items-center justify-center text-current opacity-70 hover:opacity-100"
             >
               <X className="w-4 h-4" />
             </button>
