@@ -22,7 +22,11 @@ function getAuthErrorMessage(error: unknown): string {
     : ''
 
   if (code.includes('unauthorized-domain')) {
-    return 'Domain Netlify belum diizinkan di Firebase Auth.'
+    return 'Domain Vercel belum diizinkan di Firebase Auth.'
+  }
+
+  if (code.includes('api-key-not-valid') || code.includes('invalid-api-key')) {
+    return 'Firebase API key di build ini tidak valid. Refresh halaman lalu coba lagi.'
   }
 
   if (code.includes('popup-blocked')) {
@@ -110,9 +114,9 @@ export function AuthGate() {
             className="mt-4 w-full rounded-xl border border-[rgba(248,113,113,0.28)] bg-[var(--sk-red-dim)] px-4 py-3 text-left"
           >
             <p className="text-xs font-semibold text-[var(--sk-red)]">{error}</p>
-            {error.includes('Domain Netlify') && (
+            {error.includes('Domain Vercel') && (
               <p className="mt-1 text-[11px] leading-relaxed text-[var(--sk-text-muted)]">
-                Tambahkan kelolauangku.netlify.app di Firebase Authentication - Settings - Authorized domains.
+                Tambahkan sakukilat-finance-tracker.vercel.app di Firebase Authentication - Settings - Authorized domains.
               </p>
             )}
           </div>
