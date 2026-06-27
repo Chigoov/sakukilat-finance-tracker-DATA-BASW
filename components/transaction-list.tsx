@@ -3,6 +3,7 @@
 import { useMemo } from 'react'
 import { formatRelativeDate } from '@/lib/parser'
 import type { Transaction } from '@/lib/mock-data'
+import type { TransactionUpdateInput } from '@/lib/store'
 import { TransactionItem } from './transaction-item'
 import { ReceiptText } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -10,6 +11,7 @@ import { cn } from '@/lib/utils'
 interface TransactionListProps {
   transactions: Transaction[]
   onDelete?: (id: string) => void
+  onUpdate?: (id: string, updates: TransactionUpdateInput) => void
   newTransactionId?: string | null
   className?: string
 }
@@ -23,6 +25,7 @@ interface GroupedTransactions {
 export function TransactionList({
   transactions,
   onDelete,
+  onUpdate,
   newTransactionId,
   className,
 }: TransactionListProps) {
@@ -89,6 +92,7 @@ export function TransactionList({
                 key={txn.id}
                 transaction={txn}
                 onDelete={onDelete}
+                onUpdate={onUpdate}
                 isNew={txn.id === newTransactionId}
               />
             ))}
