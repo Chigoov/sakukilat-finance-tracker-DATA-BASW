@@ -14,6 +14,7 @@ import {
 } from '@/lib/store'
 import { formatIDRCompact } from '@/lib/parser'
 import { AuthGate } from '@/components/auth-gate'
+import { OnboardingTour } from '@/components/onboarding-tour'
 import { SmartInput } from '@/components/smart-input'
 import { TabBeranda } from '@/components/tab-beranda'
 import { TabSaku } from '@/components/tab-saku'
@@ -97,6 +98,9 @@ function AppShell() {
 
   return (
     <div className="min-h-[100dvh] bg-[var(--sk-bg)] flex flex-col">
+      {/* First-run guided tour. Self-gates on localStorage — won't re-show. */}
+      <OnboardingTour />
+
       {/* ── Tab content area ── */}
       <main className="flex-1 overflow-y-auto pb-[150px] md:pb-[112px] md:mb-0">
         {activeTab === 'beranda' && <TabBeranda />}
