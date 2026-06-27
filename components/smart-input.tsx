@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { ArrowRightLeft, PiggyBank, SendHorizonal, Sparkles, X, Loader2, TrendingDown, TrendingUp } from 'lucide-react'
-import { parseEntry, splitEntries, formatIDR, type ParserExtras, type ParsedEntry } from '@/lib/parser'
+import { parseEntry, formatIDR, type ParserExtras } from '@/lib/parser'
 import { cn } from '@/lib/utils'
 import { getCategoryConfig, getPaymentLabel } from './category-badge'
 
@@ -17,17 +17,6 @@ interface ParsePreview {
   toWalletId?: string
   confidence: number
   warning?: string
-  extraCount?: number   // jumlah transaksi tambahan pada input multi-item
-  totalAmount?: number  // total nominal seluruh segmen (untuk input multi-item)
-  // PATCH (audit fix #5): rincian setiap segmen multi-item supaya user bisa
-  // melihat sebelum tekan Enter — bukan sekadar badge "+N transaksi lagi".
-  items?: Array<{
-    description: string
-    amount: number
-    type?: 'expense' | 'income'
-    paymentMethod?: string
-    kind: 'transaction' | 'transfer' | 'saving'
-  }>
 }
 
 const EXAMPLE_HINTS = [
@@ -75,17 +64,12 @@ export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, au
   const [hintIndex, setHintIndex] = useState(0)
   const [localSubmitting, setLocalSubmitting] = useState(false)
   const [mode, setMode] = useState<InputMode>('auto')
-  // Audit fix #5: toggle untuk menampilkan rincian segmen multi-item.
-  // Defaultnya tertutup supaya tidak menutupi tombol Send saat satu transaksi.
-  const [showItems, setShowItems] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const locked = Boolean(isSubmitting || localSubmitting)
-  // Memberi awalan "masuk " per-segmen agar input multi-item bermode pemasukan
-  // tetap dikenali sebagai pemasukan di setiap segmennya.
-  const withModePrefix = useCallback(
-    (segment: string) => (mode === 'income' ? `masuk ${segment}` : segment),
-    [mode]
-  )
+  const effectiveValue =
+    mode === 'income' && value.trim() ? `income ${value}` :
+    mode === 'expense' && value.trim() ? `expense ${value}` :
+    value
   const activeHints = useMemo(() => {
     if (mode === 'income') return INCOME_HINTS
     if (mode === 'expense') return EXPENSE_HINTS
@@ -95,122 +79,73 @@ export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, au
 
   // Cycle through example hints
   useEffect(() => {
+    if (focused || value.trim()) return
     const interval = setInterval(() => {
       setHintIndex(i => (i + 1) % activeHints.length)
-    }, 3000)
+    }, 9000)
     return () => clearInterval(interval)
-  }, [activeHints.length])
+  }, [activeHints.length, focused, value])
 
   // Optional autofocus (desktop top bar)
   useEffect(() => {
     if (autoFocus) inputRef.current?.focus()
   }, [autoFocus])
 
-  // Live parse preview — kini sadar multi-item: input gabungan dipecah per-segmen
-  // sehingga pengguna melihat transaksi PERTAMA + indikator "+N" dan total nominal.
+  // Live parse preview
   useEffect(() => {
-    const raw = value.trim()
-    if (!raw) {
+    if (!value.trim()) {
       setPreview(null)
       return
     }
-
-    const entries: ParsedEntry[] = splitEntries(raw)
-      .map(segment => parseEntry(withModePrefix(segment), parserExtras))
-      .filter((entry): entry is ParsedEntry => entry !== null && entry.amount > 0)
-
-    if (entries.length === 0) {
-      setPreview(null)
-      return
-    }
-
-    const [first, ...rest] = entries
-    const totalAmount = entries.reduce((sum, entry) => sum + entry.amount, 0)
-    const extraCount = rest.length
-    // Audit fix #5: bangun ringkasan per-segmen untuk dropdown rincian.
-    // Type narrowing eksplisit: ParsedTransaction tidak punya
-    // fromWalletId/toWalletId, ParsedTransfer/ParsedSaving tidak punya
-    // paymentMethod/type. Discriminator-nya `kind`.
-    const items = entries.map(entry => {
-      // ParsedTransaction.kind bisa undefined ATAU 'transaction'; selain itu
-      // pasti transfer/saving yang berisi fromWalletId/toWalletId.
-      if (entry.kind === 'transfer' || entry.kind === 'saving') {
-        return {
-          description: entry.description,
-          amount: entry.amount,
-          kind: entry.kind,
-          type: undefined,
-          paymentMethod: `${entry.fromWalletId} → ${entry.toWalletId}`,
-        } as const
+    const parsed = parseEntry(effectiveValue, parserExtras)
+    if (parsed && parsed.amount > 0) {
+      if (parsed.kind === 'transfer' || parsed.kind === 'saving') {
+        setPreview({
+          kind: parsed.kind,
+          description: parsed.description,
+          amount: parsed.amount,
+          fromWalletId: parsed.fromWalletId,
+          toWalletId: parsed.toWalletId,
+          confidence: parsed.confidence,
+          warning: parsed.warning,
+        })
+      } else {
+        setPreview({
+          kind: 'transaction',
+          description: parsed.description,
+          amount: parsed.amount,
+          type: parsed.type,
+          category: parsed.category,
+          paymentMethod: parsed.paymentMethod,
+          confidence: parsed.confidence,
+          warning: parsed.warning,
+        })
       }
-      return {
-        description: entry.description,
-        amount: entry.amount,
-        kind: 'transaction' as const,
-        type: entry.type,
-        paymentMethod: entry.paymentMethod,
-      }
-    })
-
-    if (first.kind === 'transfer' || first.kind === 'saving') {
-      setPreview({
-        kind: first.kind,
-        description: first.description,
-        amount: first.amount,
-        fromWalletId: first.fromWalletId,
-        toWalletId: first.toWalletId,
-        confidence: first.confidence,
-        warning: first.warning,
-        extraCount,
-        totalAmount,
-        items,
-      })
     } else {
-      setPreview({
-        kind: 'transaction',
-        description: first.description,
-        amount: first.amount,
-        type: first.type,
-        category: first.category,
-        paymentMethod: first.paymentMethod,
-        confidence: first.confidence,
-        warning: first.warning,
-        extraCount,
-        totalAmount,
-        items,
-      })
+      setPreview(null)
     }
-  }, [value, parserExtras, withModePrefix])
+  }, [value, effectiveValue, parserExtras])
 
   const handleSubmit = useCallback(async () => {
     const trimmed = value.trim()
     if (!trimmed || locked) return
 
-    // PATCH: pecah input multi-item menjadi beberapa segmen, lalu submit satu per
-    // satu secara berurutan. Tiap segmen melewati pipeline parser yang sama persis,
-    // sehingga "kopi 18k spay sama parkir 2rb tunai" tercatat sebagai DUA transaksi
-    // utuh — bukan satu transaksi dengan nominal terakhir saja.
-    const segments = splitEntries(trimmed).map(withModePrefix)
-
     setLocalSubmitting(true)
     try {
-      let allOk = true
-      for (const segment of segments) {
-        const ok = await Promise.resolve(onSubmit(segment))
-        if (ok === false) allOk = false
-      }
-      // Hanya bersihkan input bila SELURUH segmen berhasil; jika ada yang gagal,
-      // teks dibiarkan agar pengguna bisa memperbaiki tanpa kehilangan ketikannya.
-      if (allOk) {
+      const submittedInput =
+        mode === 'income' ? `income ${trimmed}` :
+        mode === 'expense' ? `expense ${trimmed}` :
+        trimmed
+      const ok = await Promise.resolve(onSubmit(submittedInput))
+      if (ok !== false) {
         setValue('')
         setPreview(null)
-        setShowItems(false)
       }
     } finally {
       setLocalSubmitting(false)
       requestAnimationFrame(() => inputRef.current?.focus())
     }
-  }, [value, locked, withModePrefix, onSubmit])
+  }, [value, locked, mode, onSubmit])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -230,7 +165,8 @@ export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, au
 
   return (
     <div className={cn('w-full', className)}>
-      <div className="mb-2 grid grid-cols-3 gap-1.5 px-1">
+      {(focused || value.trim() || mode !== 'auto') && (
+      <div className="mb-2 flex justify-center gap-1.5 px-1">
         {([
           ['auto', Sparkles, 'Auto'],
           ['expense', TrendingDown, 'Keluar'],
@@ -241,7 +177,7 @@ export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, au
             type="button"
             onClick={() => setMode(itemMode)}
             className={cn(
-              'h-8 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-1.5 border transition-colors',
+              'h-8 min-w-20 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-1.5 border transition-colors',
               mode === itemMode
                 ? itemMode === 'income'
                   ? 'bg-[var(--sk-green)] border-[var(--sk-green)] text-[#090D16]'
@@ -256,9 +192,10 @@ export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, au
           </button>
         ))}
       </div>
+      )}
 
       {/* Parse preview pill */}
-      {preview && focused && (
+      {preview && value.trim() && (
         <div className="animate-slide-up mb-2 px-1">
           <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-[var(--sk-surface-2)] border border-[var(--sk-border-2)]">
             {preview.kind !== 'transaction' ? (
@@ -274,17 +211,6 @@ export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, au
               <span className="text-xs text-[var(--sk-text-muted)] mr-1.5 capitalize truncate">
                 {preview.description}
               </span>
-              {preview.extraCount ? (
-                <button
-                  type="button"
-                  onClick={() => setShowItems(prev => !prev)}
-                  aria-expanded={showItems}
-                  aria-label={showItems ? 'Sembunyikan rincian transaksi' : 'Lihat rincian semua transaksi'}
-                  className="text-[10px] font-semibold text-[var(--sk-cyan)] bg-[var(--sk-cyan-dim)] rounded px-1.5 py-0.5 mr-1.5 hover:opacity-80 transition-opacity"
-                >
-                  +{preview.extraCount} transaksi lagi {showItems ? '▴' : '▾'}
-                </button>
-              ) : null}
               {preview.warning && (
                 <span className="text-[10px] text-[var(--sk-amber)] mr-1.5">
                   {preview.warning}
@@ -306,56 +232,20 @@ export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, au
               )}
               data-amount
             >
-              {preview.kind !== 'transaction' ? '' : preview.type === 'expense' ? '-' : '+'}{formatIDR(preview.extraCount ? (preview.totalAmount ?? preview.amount) : preview.amount)}
+              {preview.kind !== 'transaction' ? '' : preview.type === 'expense' ? '-' : '+'}{formatIDR(preview.amount)}
             </span>
-            {/* Confidence indicator */}
-            <div
+            <span
               title={`Tingkat keyakinan: ${Math.round(preview.confidence * 100)}%`}
               className={cn(
-                'w-1.5 h-1.5 rounded-full flex-shrink-0',
-                preview.confidence >= 0.9 ? 'bg-[var(--sk-green)]' :
-                preview.confidence >= 0.7 ? 'bg-[var(--sk-amber)]' :
-                'bg-[var(--sk-text-dim)]'
+                'min-w-9 rounded-full px-1.5 py-0.5 text-[10px] font-semibold text-center flex-shrink-0',
+                preview.confidence >= 0.9 ? 'bg-[var(--sk-green-dim)] text-[var(--sk-green)]' :
+                preview.confidence >= 0.7 ? 'bg-[var(--sk-amber-dim)] text-[var(--sk-amber)]' :
+                'bg-[var(--sk-surface-3)] text-[var(--sk-text-muted)]'
               )}
-            />
+            >
+              {Math.round(preview.confidence * 100)}%
+            </span>
           </div>
-          {/* Audit fix #5: panel rincian per-segmen, hanya muncul bila user
-              menekan toggle "+N transaksi lagi". Memberi user kepastian
-              bahwa parser membagi input multi-item dengan benar sebelum
-              mereka menekan Enter. */}
-          {showItems && preview.items && preview.items.length > 1 && (
-            <div className="mt-1 rounded-xl border border-[var(--sk-border-2)] bg-[var(--sk-surface-2)] divide-y divide-[var(--sk-border)]">
-              {preview.items.map((item, idx) => (
-                <div key={idx} className="flex items-start justify-between gap-2 px-3 py-2 text-xs">
-                  <div className="min-w-0 flex-1">
-                    <p className="font-medium text-[var(--sk-text)] truncate capitalize">{item.description}</p>
-                    <p className="text-[10px] text-[var(--sk-text-dim)] truncate">
-                      {item.kind === 'transaction'
-                        ? getPaymentLabel(item.paymentMethod ?? 'tunai')
-                        : item.paymentMethod /* sudah formatted "from → to" */}
-                    </p>
-                  </div>
-                  <span
-                    className={cn(
-                      'text-xs font-bold tabular-nums flex-shrink-0',
-                      item.kind !== 'transaction'
-                        ? 'text-[var(--sk-cyan)]'
-                        : item.type === 'expense' ? 'text-[var(--sk-red)]' : 'text-[var(--sk-green)]'
-                    )}
-                  >
-                    {item.kind === 'transaction' && item.type === 'expense' ? '-' : item.kind === 'transaction' ? '+' : ''}
-                    {formatIDR(item.amount)}
-                  </span>
-                </div>
-              ))}
-              <div className="flex items-center justify-between gap-2 px-3 py-2 bg-[var(--sk-surface-3)]">
-                <span className="text-[11px] font-semibold text-[var(--sk-text-muted)] uppercase tracking-wide">Total</span>
-                <span className="text-sm font-bold tabular-nums text-[var(--sk-text)]">
-                  {formatIDR(preview.totalAmount ?? preview.amount)}
-                </span>
-              </div>
-            </div>
-          )}
         </div>
       )}
 
@@ -420,7 +310,7 @@ export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, au
           disabled={!value.trim() || locked}
           aria-label="Tambah transaksi"
           className={cn(
-            'flex-shrink-0 w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-200',
+            'flex-shrink-0 w-11 h-11 rounded-xl flex items-center justify-center transition-all duration-200',
             value.trim() && !locked
               ? mode === 'income'
                 ? 'bg-[var(--sk-green)] text-[#0B0F19] shadow-[0_0_12px_rgba(52,211,153,0.24)] hover:opacity-90 active:scale-95'
@@ -429,9 +319,9 @@ export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, au
           )}
         >
           {locked ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
+            <Loader2 className="w-5 h-5 animate-spin" />
           ) : (
-            <SendHorizonal className="w-4 h-4" />
+            <SendHorizonal className="w-5 h-5" />
           )}
         </button>
       </div>
