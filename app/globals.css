@@ -54,10 +54,15 @@
   --sk-border:      rgba(255,255,255,0.07);
   --sk-border-2:    rgba(255,255,255,0.12);
 
-  /* ── Typography ── */
-  --sk-text:        #E8EDF7;
-  --sk-text-muted:  #8EA0C2;
-  --sk-text-dim:    #66789A;
+  /* ── Typography ──
+   * Bumped per UX audit: outdoor / sunlight readability on OLED #090D16.
+   * Primary text now at near-white #F1F5FB (≈17:1 contrast), and dim text
+   * raised from #66789A → #7C8FB3 so secondary labels stay legible in bright
+   * environments without becoming aggressive. Users on accessibility-grade
+   * preferences (`prefers-contrast: more`) get an extra boost below. */
+  --sk-text:        #F1F5FB;
+  --sk-text-muted:  #9DB0D2;
+  --sk-text-dim:    #7C8FB3;
 
   /* ── Brand accent ── */
   --sk-cyan:        #38BDF8;
@@ -332,4 +337,26 @@ html[data-theme="light"] {
     transform: translate(var(--sk-dx), var(--sk-dy)) rotate(540deg) scale(1);
     opacity: 0;
   }
+}
+
+/* ── High-contrast mode (Accessibility) ──────────────────────────────────
+ * Triggered automatically when the OS reports `prefers-contrast: more`
+ * (e.g. iOS Increase Contrast, Android High contrast text, Windows). Pushes
+ * text + border tokens to maximum legibility without leaving the dark theme. */
+@media (prefers-contrast: more) {
+  :root {
+    --sk-text:        #FFFFFF;
+    --sk-text-muted:  #C8D5EE;
+    --sk-text-dim:    #A4B5D4;
+    --sk-border:      rgba(255,255,255,0.18);
+    --sk-border-2:    rgba(255,255,255,0.28);
+  }
+}
+
+/* ── Long-press hint affordance ──────────────────────────────────────────
+ * Subtle visual on the saldo card so power-users discover the gesture.
+ * Pure CSS, no JS cost. */
+[aria-label="Tahan untuk toggle Zen Mode"]:active {
+  transform: scale(0.995);
+  transition: transform 80ms ease-out;
 }

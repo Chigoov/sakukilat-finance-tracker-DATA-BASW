@@ -32,6 +32,38 @@ function exportToJSON(transactions: Transaction[]) {
   URL.revokeObjectURL(url)
 }
 
+// CSV export — round-trips through Google Sheets / Excel. RFC 4180 style:
+// fields with comma / quote / newline get wrapped in double-quotes; inner
+// quotes are doubled. UTF-8 BOM prevents Excel mojibake on Indonesian text.
+function csvEscape(value: string): string {
+  if (/[",\n\r]/.test(value)) {
+    return `"${value.replace(/"/g, '""')}"`
+  }
+  return value
+}
+
+function exportToCSV(transactions: Transaction[]) {
+  const header = ['date', 'description', 'amount', 'type', 'category', 'payment_method']
+  const lines = [header.join(',')]
+  for (const t of transactions) {
+    lines.push([
+      t.date.toISOString(),
+      csvEscape(t.description),
+      String(t.amount),
+      t.type,
+      csvEscape(t.category),
+      csvEscape(t.paymentMethod),
+    ].join(','))
+  }
+  const blob = new Blob(['\uFEFF' + lines.join('\n')], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `sakukilat-export-${new Date().toISOString().slice(0, 10)}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 // ── Stat card ─────────────────────────────────────────────────────────────────
 function StatCard({ label, value, color }: { label: string; value: string; color: string }) {
   return (
@@ -93,6 +125,7 @@ export function TabProfil() {
   const { transactions } = useTransactionData()
   const { zenMode, themeMode, toggleZen, setThemeMode } = usePreferenceStore()
   const [exported, setExported] = useState(false)
+  const [exportedCSV, setExportedCSV] = useState(false)
   const [confirmLogout, setConfirmLogout] = useState(false)
   const [profileNameDraft, setProfileNameDraft] = useState(user?.name ?? '')
 
@@ -102,6 +135,12 @@ export function TabProfil() {
     exportToJSON(transactions)
     setExported(true)
     setTimeout(() => setExported(false), 2500)
+  }
+
+  const handleExportCSV = () => {
+    exportToCSV(transactions)
+    setExportedCSV(true)
+    setTimeout(() => setExportedCSV(false), 2500)
   }
 
   const handleLogout = () => {
@@ -286,6 +325,17 @@ export function TabProfil() {
               onClick={handleExport}
               right={
                 exported
+                  ? <Check className="w-4 h-4 text-[var(--sk-green)]" />
+                  : <ChevronRight className="w-4 h-4 text-[var(--sk-text-dim)]" />
+              }
+            />
+            <SettingRow
+              icon={exportedCSV ? Check : Download}
+              label={exportedCSV ? 'File berhasil diunduh!' : 'Ekspor ke CSV (Sheets / Excel)'}
+              description="Bisa dibuka langsung di Google Sheets atau Excel"
+              onClick={handleExportCSV}
+              right={
+                exportedCSV
                   ? <Check className="w-4 h-4 text-[var(--sk-green)]" />
                   : <ChevronRight className="w-4 h-4 text-[var(--sk-text-dim)]" />
               }

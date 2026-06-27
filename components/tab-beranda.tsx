@@ -1,6 +1,6 @@
 'use client'
 
-import { memo, useEffect, useMemo, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Eye, EyeOff, TrendingUp, TrendingDown, Zap } from 'lucide-react'
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts'
 import {
@@ -159,6 +159,33 @@ export const TabBeranda = memo(function TabBeranda() {
   const { newTransactionId } = useTransactionStatus()
   const { zenMode, toggleZen } = usePreferenceStore()
 
+  // ── Long-press balance to toggle Zen Mode ─────────────────────────────────
+  // Per the UX critique: Zen should be a gesture on the balance itself,
+  // not a settings tap. Hold ~500ms on the saldo card to flip Zen.
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const longPressFiredRef = useRef(false)
+  const clearLongPress = useCallback(() => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current)
+      longPressTimerRef.current = null
+    }
+  }, [])
+  const handleBalancePressStart = useCallback(() => {
+    clearLongPress()
+    longPressFiredRef.current = false
+    longPressTimerRef.current = setTimeout(() => {
+      longPressFiredRef.current = true
+      toggleZen()
+      if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+        navigator.vibrate([12, 40, 12])
+      }
+    }, 500)
+  }, [clearLongPress, toggleZen])
+  const handleBalancePressEnd = useCallback(() => {
+    clearLongPress()
+  }, [clearLongPress])
+  useEffect(() => () => clearLongPress(), [clearLongPress])
+
   const [activeFilter, setActiveFilter] = useState<FilterTab>('semua')
   const hour = useClientHour()
   const { period, fullDate, monthProgress } = useClientDateInfo()
@@ -315,7 +342,18 @@ export const TabBeranda = memo(function TabBeranda() {
 
       {/* ── Balance + Donut card ── */}
       <section className="px-4 md:px-8 pb-4">
-        <div className="rounded-2xl bg-[var(--sk-surface)] border border-[var(--sk-border)] p-5 overflow-hidden relative">
+        <div
+          className="rounded-2xl bg-[var(--sk-surface)] border border-[var(--sk-border)] p-5 overflow-hidden relative select-none touch-manipulation"
+          onPointerDown={handleBalancePressStart}
+          onPointerUp={handleBalancePressEnd}
+          onPointerLeave={handleBalancePressEnd}
+          onPointerCancel={handleBalancePressEnd}
+          onContextMenu={e => e.preventDefault()}
+          role="button"
+          tabIndex={0}
+          aria-label="Tahan untuk toggle Zen Mode"
+          title="Tahan ~0.5 detik untuk sembunyikan / tampilkan angka"
+        >
           {/* ambient glow */}
           <div
             aria-hidden
