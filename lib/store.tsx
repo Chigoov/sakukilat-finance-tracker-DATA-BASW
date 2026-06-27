@@ -31,8 +31,10 @@ import {
   type WalletType,
 } from './mock-data'
 import {
+  getRedirectResult,
   onAuthStateChanged,
   signInWithPopup,
+  signInWithRedirect,
   signOut as firebaseSignOut,
   type User as FirebaseUser,
 } from 'firebase/auth'
@@ -268,6 +270,19 @@ function shouldUseLocalDemoAuth(): boolean {
   return ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname)
 }
 
+function shouldUseRedirectAuth(): boolean {
+  if (typeof window === 'undefined') return false
+
+  const isSmallTouchDevice =
+    window.innerWidth <= 768 ||
+    window.matchMedia('(pointer: coarse)').matches
+  const isStandalone =
+    window.matchMedia('(display-mode: standalone)').matches ||
+    Boolean((window.navigator as Navigator & { standalone?: boolean }).standalone)
+
+  return isSmallTouchDevice || isStandalone
+}
+
 function slugify(s: string): string {
   return s.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || `c-${Date.now()}`
 }
@@ -382,12 +397,37 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const profileNameRef = useRef(profileName)
 
+  const dismissToast = useCallback(() => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
+    setToast(null)
+    toastTimerRef.current = null
+  }, [])
+
+  const showToast = useCallback((text: string, type: 'success' | 'error', action?: Toast['action']) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
+    setToast({ text, type, action })
+    toastTimerRef.current = setTimeout(() => {
+      setToast(null)
+      toastTimerRef.current = null
+    }, 3000)
+  }, [])
+
   useEffect(() => {
     profileNameRef.current = profileName
   }, [profileName])
 
   useEffect(() => {
     void initFirebaseAnalytics()
+    void getRedirectResult(firebaseAuth)
+      .then(result => {
+        if (!result?.user) return
+        setUser(applyProfileName(mapFirebaseUser(result.user), profileNameRef.current))
+        showToast('Login Google berhasil. Saku siap dipakai.', 'success')
+      })
+      .catch(error => {
+        console.error('Firebase Google redirect sign-in failed:', error)
+        showToast('Login Google gagal. Coba lagi sebentar.', 'error')
+      })
 
     const unsubscribe = onAuthStateChanged(
       firebaseAuth,
@@ -409,7 +449,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     )
 
     return unsubscribe
-  }, [])
+  }, [showToast])
 
   useEffect(() => {
     const root = document.documentElement
@@ -483,30 +523,29 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [wallets, customPayments, customCategories, lastActiveWalletId]
   )
 
-  const dismissToast = useCallback(() => {
-    if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
-    setToast(null)
-    toastTimerRef.current = null
-  }, [])
-
-  const showToast = useCallback((text: string, type: 'success' | 'error', action?: Toast['action']) => {
-    if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
-    setToast({ text, type, action })
-    toastTimerRef.current = setTimeout(() => {
-      setToast(null)
-      toastTimerRef.current = null
-    }, 3000)
-  }, [])
-
   // ── Auth ──────────────────────────────────────────────────────────────────
   const signInWithGoogle = useCallback(async () => {
     try {
+      if (shouldUseRedirectAuth()) {
+        await signInWithRedirect(firebaseAuth, googleProvider)
+        return
+      }
+
       const result = await signInWithPopup(firebaseAuth, googleProvider)
       setUser(applyProfileName(mapFirebaseUser(result.user), profileNameRef.current))
       showToast('Login Google berhasil. Saku siap dipakai.', 'success')
     } catch (error) {
       console.error('Firebase Google sign-in failed:', error)
-      showToast('Login Google gagal. Izinkan popup lalu coba lagi.', 'error')
+      const code = typeof error === 'object' && error !== null && 'code' in error
+        ? String((error as { code?: unknown }).code)
+        : ''
+
+      if (code.includes('popup-blocked') || code.includes('popup-closed-by-user') || code.includes('cancelled-popup-request')) {
+        await signInWithRedirect(firebaseAuth, googleProvider)
+        return
+      }
+
+      showToast('Login Google gagal. Coba detail error di bawah tombol login.', 'error')
       throw error
     }
   }, [showToast])
