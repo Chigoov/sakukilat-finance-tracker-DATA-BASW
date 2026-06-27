@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Home, BarChart2, Wallet, User } from 'lucide-react'
+import { Home, BarChart2, Wallet, User, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
   useAuthStore,
@@ -28,7 +28,7 @@ const TABS: { id: Tab; label: string; icon: React.ComponentType<{ className?: st
 
 function AppShell() {
   const { user, authReady } = useAuthStore()
-  const { toast } = useFeedbackStore()
+  const { toast, dismissToast } = useFeedbackStore()
   const { addTransaction } = useTransactionActions()
   const { isSubmitting } = useTransactionStatus()
   const { parserExtras } = useCustomizationStore()
@@ -143,16 +143,24 @@ function AppShell() {
         })}
       </nav>
 
-      {/* ── Toast ── */}
+      {/* ── Toast ──
+          Audit fix #6: toast dipindah ke ATAS layar (safe-area aware) supaya
+          tidak menutupi SmartInput preview / tombol Send saat user mengetik
+          transaksi berikutnya berturut-turut. Sebelumnya bottom-[176px] + area
+          input keduanya menumpuk dan saling menutupi selama 3-5 detik.
+
+          Audit fix #4: bila toast.action tersedia (UNDO Snackbar), tombolnya
+          dirender inline di sebelah teks. Klik UNDO langsung memanggil
+          handler dari store (yang me-reverse mutasi & menutup toast). */}
       {toast && (
         <div
           role="status"
           aria-live="polite"
-          className="fixed z-50 animate-slide-up bottom-[176px] left-4 right-4 md:bottom-[104px] md:left-auto md:right-6 md:w-auto"
+          className="fixed z-50 animate-slide-up top-4 left-4 right-4 md:top-6 md:left-auto md:right-6 md:w-auto md:max-w-md pt-safe"
         >
           <div
             className={cn(
-              'flex items-center gap-2.5 px-4 py-3 rounded-xl shadow-2xl text-sm font-medium border backdrop-blur-xl',
+              'flex items-center gap-3 px-4 py-3 rounded-xl shadow-2xl text-sm font-medium border backdrop-blur-xl',
               toast.type === 'success'
                 ? 'bg-[var(--sk-green-dim)] border-[rgba(52,211,153,0.3)] text-[var(--sk-green)]'
                 : 'bg-[var(--sk-red-dim)] border-[rgba(248,113,113,0.3)] text-[var(--sk-red)]'
@@ -162,7 +170,32 @@ function AppShell() {
               'inline-block w-2 h-2 rounded-full flex-shrink-0',
               toast.type === 'success' ? 'bg-[var(--sk-green)]' : 'bg-[var(--sk-red)]'
             )} />
-            {toast.text}
+            <span className="flex-1 min-w-0">{toast.text}</span>
+            {toast.action && (
+              <button
+                type="button"
+                onClick={() => {
+                  toast.action?.onClick()
+                  dismissToast()
+                }}
+                className={cn(
+                  'flex-shrink-0 text-xs font-bold uppercase tracking-wider px-2 py-1 rounded-md transition-opacity hover:opacity-80',
+                  toast.type === 'success'
+                    ? 'text-[var(--sk-green)] bg-[rgba(52,211,153,0.15)]'
+                    : 'text-[var(--sk-red)] bg-[rgba(248,113,113,0.15)]'
+                )}
+              >
+                {toast.action.label}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={dismissToast}
+              aria-label="Tutup notifikasi"
+              className="flex-shrink-0 opacity-60 hover:opacity-100 transition-opacity"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
         </div>
       )}

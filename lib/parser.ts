@@ -95,7 +95,7 @@ export interface ParserExtras {
   lastActiveWalletId?: string
 }
 
-// ── Payment method keywords ──────────────────────────────────────────────────
+// ── Payment method keywords ───────────────────────────────────────────────────
 // Each entry: [exactTokens[], substringTokens[]]
 // exactTokens  → matched only against a complete whitespace-split token
 // substringTokens → also matched if the token *contains* the keyword
@@ -152,14 +152,14 @@ function wordMatch(str: string, kw: string): boolean {
   return new RegExp(`(^|[^a-z0-9_])${escapeRegex(normalized)}(?=$|[^a-z0-9_])`, 'i').test(str)
 }
 
-// ── Income keywords ──────────────────────────────────────────────────────────
+// ── Income keywords ───────────────────────────────────────────────────────────
 const INCOME_KEYWORDS = [
   'gaji', 'salary', 'terima', 'dapat', 'masuk', 'pemasukan', 'pendapatan', 'income',
   'bonus', 'komisi', 'dividen', 'honor', 'fee', 'bayaran', 'dibayar', 'jual',
   'refund', 'cashback', 'hadiah', 'thr', 'freelance',
 ]
 
-// ── Kata pengisi di awal deskripsi ───────────────────────────────────────────
+// ── Kata pengisi di awal deskripsi ──────────────────────────────────────────
 // Kata kerja transaksi generik yang tidak menambah makna pada deskripsi item.
 // Dibuang HANYA dari awal deskripsi (mis. "bayar bakso" → "bakso"), tidak pernah
 // sampai mengosongkan deskripsi.
@@ -167,7 +167,7 @@ const LEADING_FILLER_WORDS = new Set([
   'bayar', 'bayarin', 'beli', 'beliin', 'buat', 'utk', 'untuk', 'pesan', 'order',
 ])
 
-// ── Konektor multi-item ──────────────────────────────────────────────────────
+// ── Konektor multi-item ─────────────────────────────────────────────────────
 // Pemisah antar-transaksi pada input gabungan seperti
 // "kopi 18k spay sama parkir 2rb tunai". Dicocokkan sebagai kata utuh agar
 // "sama" di tengah deskripsi ("nasi sama telur") tidak salah dipotong — keputusan
@@ -175,7 +175,7 @@ const LEADING_FILLER_WORDS = new Set([
 const SEGMENT_SEPARATOR_PATTERN =
   /\s*(?:,|;|\+|&|\n|\.(?=\s)|\bdan\b|\bsama\b|\bama\b|\blalu\b|\bllu\b|\bterus\b|\btrs\b|\bkemudian\b|\babis(?:\s+itu)?\b|\bhabis\s+itu\b)\s*/i
 
-// ── Category keyword map ─────────────────────────────────────────────────────
+// ── Category keyword map ────────────────────────────────────────────────────
 // Keywords are matched as whole words against the lowercased description
 // (using a word-boundary aware check), preventing partial false-matches.
 const CATEGORY_KEYWORDS: Record<Category, string[]> = {
@@ -235,7 +235,7 @@ const CATEGORY_KEYWORDS: Record<Category, string[]> = {
   lainnya: [],
 }
 
-// ── Amount normalizer ────────────────────────────────────────────────────────
+// ── Amount normalizer ─────────────────────────────────────────────────────────
 /**
  * Converts a raw number string (possibly with Indonesian-style separators)
  * into a plain float. Rules:
@@ -247,7 +247,7 @@ const CATEGORY_KEYWORDS: Record<Category, string[]> = {
  *   - Mixed "1.500.000" → 1500000 (multiple dots → all are thousands seps)
  *   - Standard decimal "18.5" / "1,5" → kept as-is
  */
-function normalizeNumberString(raw: string, mode: 'plain' | 'suffix' = 'suffix'): number | null {
+export function normalizeNumberString(raw: string, mode: 'plain' | 'suffix' = 'suffix'): number | null {
   const s = raw.trim().replace(/\s+/g, '')
   if (!/^\d+(?:[.,]\d+)*$/.test(s)) return null
 
@@ -264,7 +264,12 @@ function normalizeNumberString(raw: string, mode: 'plain' | 'suffix' = 'suffix')
     const compactValue = Number(compact)
     if (!Number.isFinite(compactValue)) return null
 
-    return compactValue < 1_000 ? compactValue * 100 : compactValue
+    // PATCH (audit fix #3): never silently multiply small numbers.
+    // Sebelumnya: nilai <1000 dikali 100 dengan asumsi pengguna lupa nol — keliru
+    // total untuk "200 buat nasi goreng" (user maksud Rp200, parser jadikan Rp20.000).
+    // Sekarang nilai dikembalikan apa adanya; warning "Nominal di bawah Rp1.000?"
+    // sudah ditangani oleh amountWarning() di pipeline atas.
+    return compactValue
   }
 
   {
@@ -332,12 +337,12 @@ function normalizeNumberString(raw: string, mode: 'plain' | 'suffix' = 'suffix')
   // Plain integer string "38500"
 }
 
-// ── Amount token parser ──────────────────────────────────────────────────────
+// ── Amount token parser ───────────────────────────────────────────────────────
 /**
  * Attempts to parse a single whitespace-split token as a currency amount.
  * Returns null if the token is not an amount token.
  */
-function parseAmountToken(token: string): number | null {
+export function parseAmountToken(token: string): number | null {
   const t = normalizeToken(token).replace(/^(rp|idr)(?=\d)/, '')
 
   // Composite "1jt500" / "2juta750" pattern — e.g. "1jt500" = 1.500.000
@@ -404,7 +409,7 @@ function amountWarning(tokens: string[], indexes: Set<number>, amount: number): 
   return /^\d+$/.test(token) ? 'Nominal di bawah Rp1.000?' : undefined
 }
 
-// ── Detect payment method ────────────────────────────────────────────────────
+// ── Detect payment method ─────────────────────────────────────────────────────
 /**
  * Scans tokens left-to-right and returns the first payment method found.
  * Uses exact matching by default; the `contains` list allows substring
@@ -436,7 +441,7 @@ function detectExplicitPaymentMethod(tokens: string[], extras?: ParserExtras): s
   return null
 }
 
-// ── Token is a payment keyword? ──────────────────────────────────────────────
+// ── Token is a payment keyword? ───────────────────────────────────────────────
 function isPaymentToken(token: string, extras?: ParserExtras): boolean {
   const tl = normalizeToken(token)
   if (extras?.payments) {
@@ -502,22 +507,84 @@ function parseTransferCommand(input: string, extras?: ParserExtras): ParsedTrans
   if (!amount) return null
 
   const keIndex = normalized.findIndex((token, index) => token === 'ke' && index !== 0)
-  if (keIndex === -1) return null
+  const dariIndex = normalized.findIndex(token => token === 'dari')
 
-  const tokensBetweenAmountAndTarget =
-    keIndex > amount.endIndex
-      ? tokens.slice(amount.endIndex + 1, keIndex)
-      : []
-  const tokensBeforeAmount = tokens
-    .slice(0, amount.startIndex)
-    .filter(token => !['pindah', 'transfer', 'kirim', 'topup', 'tf'].includes(normalizeToken(token)))
-  const sourceTokens = tokensBetweenAmountAndTarget.length > 0 ? tokensBetweenAmountAndTarget : tokensBeforeAmount
-  const destinationTokens = tokens.slice(keIndex + 1)
+  // ── Branch A: explicit "ke" present (original behaviour) ───────────────────
+  if (keIndex !== -1) {
+    const tokensBetweenAmountAndTarget =
+      keIndex > amount.endIndex
+        ? tokens.slice(amount.endIndex + 1, keIndex)
+        : []
+    const tokensBeforeAmount = tokens
+      .slice(0, amount.startIndex)
+      .filter(token => !['pindah', 'transfer', 'kirim', 'topup', 'tf'].includes(normalizeToken(token)))
+    const sourceTokens = tokensBetweenAmountAndTarget.length > 0 ? tokensBetweenAmountAndTarget : tokensBeforeAmount
+    const destinationTokens = tokens.slice(keIndex + 1)
 
-  const fromWalletId = detectExplicitPaymentMethod(sourceTokens, extras) ?? extras?.lastActiveWalletId ?? 'tunai'
-  const toWalletId = detectExplicitPaymentMethod(destinationTokens, extras)
+    const fromWalletId = detectExplicitPaymentMethod(sourceTokens, extras) ?? extras?.lastActiveWalletId ?? 'tunai'
+    const toWalletId = detectExplicitPaymentMethod(destinationTokens, extras)
 
-  if (!fromWalletId || !toWalletId || fromWalletId === toWalletId) return null
+    if (!fromWalletId || !toWalletId || fromWalletId === toWalletId) return null
+
+    return {
+      kind: 'transfer',
+      description: 'Pindah uang',
+      amount: amount.amount,
+      fromWalletId,
+      toWalletId,
+      rawInput: trimmed,
+      confidence: 0.95,
+      warning: amountWarning(tokens, amount.indexes, amount.amount),
+    }
+  }
+
+  // ── Branch B (audit fix #8): no "ke" but two wallets mentioned ────────────
+  // Contoh: "transfer 50k ovo gopay", "pindah ovo 100k jago", "kirim 200k bca seabank".
+  // Strategi: kumpulkan dua wallet token pertama (mengikuti urutan kata) lalu
+  // jadikan yang PERTAMA sebagai sumber dan yang KEDUA sebagai tujuan. Bila ada
+  // "dari X", maka X dipakai sebagai sumber dan wallet lain sebagai tujuan.
+  //
+  // Catatan: PAYMENT_MAP memetakan kata kunci niat ("transfer", "tf") ke method
+  // 'transfer' juga — sehingga "transfer 50k ovo gopay" tanpa filter akan
+  // menjadikan 'transfer' sebagai wallet pertama. Kita kecualikan keyword niat
+  // ini dari pengumpulan wallet di branch tanpa-"ke".
+  const intentKeywords = new Set(['pindah', 'transfer', 'kirim', 'topup', 'tf'])
+  const walletTokens: Array<{ index: number; id: string }> = []
+  tokens.forEach((token, index) => {
+    if (amount.indexes.has(index)) return
+    const tl = normalizeToken(token)
+    if (intentKeywords.has(tl)) return
+    if (isPaymentToken(token, extras)) {
+      const id = detectExplicitPaymentMethod([token], extras)
+      if (id && !intentKeywords.has(id)) walletTokens.push({ index, id })
+    }
+  })
+
+  // Deduplikasi: butuh DUA wallet berbeda untuk bisa menyimpulkan arah transfer.
+  const uniqueWallets = walletTokens.filter(
+    (entry, idx, arr) => arr.findIndex(item => item.id === entry.id) === idx
+  )
+  if (uniqueWallets.length < 2) return null
+
+  let fromWalletId: string
+  let toWalletId: string
+
+  if (dariIndex !== -1) {
+    // "transfer 100k dari bca ke gopay" sudah ditangani Branch A; sisa kasus:
+    // "transfer 100k dari bca gopay" → sumber = wallet setelah "dari", tujuan = wallet lain.
+    const afterDari = uniqueWallets.find(w => w.index > dariIndex)
+    if (!afterDari) return null
+    const destination = uniqueWallets.find(w => w.id !== afterDari.id)
+    if (!destination) return null
+    fromWalletId = afterDari.id
+    toWalletId = destination.id
+  } else {
+    // Tanpa "dari" / "ke": ambil dua wallet pertama berdasarkan urutan kemunculan.
+    fromWalletId = uniqueWallets[0].id
+    toWalletId = uniqueWallets[1].id
+  }
+
+  if (fromWalletId === toWalletId) return null
 
   return {
     kind: 'transfer',
@@ -526,8 +593,9 @@ function parseTransferCommand(input: string, extras?: ParserExtras): ParsedTrans
     fromWalletId,
     toWalletId,
     rawInput: trimmed,
-    confidence: 0.95,
-    warning: amountWarning(tokens, amount.indexes, amount.amount),
+    // Confidence lebih rendah karena inferensi arah tanpa kata kunci eksplisit.
+    confidence: 0.75,
+    warning: amountWarning(tokens, amount.indexes, amount.amount) ?? 'Arah transfer disimpulkan dari urutan saku.',
   }
 }
 
@@ -566,7 +634,7 @@ function parseSavingCommand(input: string, extras?: ParserExtras): ParsedSaving 
   }
 }
 
-// ── Detect category ──────────────────────────────────────────────────────────
+// ── Detect category ───────────────────────────────────────────────────────────
 /**
  * Matches description text against category keyword lists.
  * Uses word-boundary detection: keyword must appear as a standalone word
@@ -604,7 +672,7 @@ function detectCategory(text: string, type: TransactionType, extras?: ParserExtr
   return 'lainnya'
 }
 
-// ── Detect transaction type ──────────────────────────────────────────────────
+// ── Detect transaction type ───────────────────────────────────────────────────
 function detectType(text: string): TransactionType {
   const lower = text.toLowerCase()
   for (const kw of INCOME_KEYWORDS) {
@@ -613,7 +681,7 @@ function detectType(text: string): TransactionType {
   return 'expense'
 }
 
-// ── Main parser ──────────────────────────────────────────────────────────────
+// ── Main parser ───────────────────────────────────────────────────────────────
 export function parseTransaction(input: string, extras?: ParserExtras): ParsedTransaction | null {
   const trimmed = input.trim()
   if (!trimmed) return null
@@ -641,7 +709,7 @@ export function parseTransaction(input: string, extras?: ParserExtras): ParsedTr
       ? extras?.lastActiveWalletId ?? 'bca'
       : 'tunai'
 
-  // ── Step 3: Build description ────────────────────────────────────────────
+  // ── Step 3: Build description ───────────────────────────────────────────
   // Include only tokens that are:
   //   - NOT the amount token (by index)
   //   - NOT a payment method token (by value)
@@ -663,13 +731,13 @@ export function parseTransaction(input: string, extras?: ParserExtras): ParsedTr
 
   const description = descTokens.join(' ').trim() || (type === 'income' ? 'Pemasukan' : 'Transaksi')
 
-  // ── Step 4: Classify ─────────────────────────────────────────────────────
+  // ── Step 4: Classify ────────────────────────────────────────────────────
   if (type === 'income' && paymentMethod === 'transfer') {
     paymentMethod = extras?.lastActiveWalletId ?? 'bca'
   }
   const category = detectCategory(description, type, extras)
 
-  // ── Step 5: Confidence score ─────────────────────────────────────────────
+  // ── Step 5: Confidence score ────────────────────────────────────────────
   // Deduct for missing signals; add for explicit payment method detection
   const hasDescription    = descTokens.length > 0
   const hasExplicitMethod = paymentTokens.length > 0
@@ -769,7 +837,7 @@ export function parseEntries(input: string, extras?: ParserExtras): ParsedEntry[
     .filter((entry): entry is ParsedEntry => entry !== null && entry.amount > 0)
 }
 
-// ── Format currency (IDR) ────────────────────────────────────────────────────
+// ── Format currency (IDR) ─────────────────────────────────────────────────────
 export function formatIDR(amount: number): string {
   return new Intl.NumberFormat('id-ID', {
     style: 'currency',

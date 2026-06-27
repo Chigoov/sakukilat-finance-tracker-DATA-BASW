@@ -19,6 +19,15 @@ interface ParsePreview {
   warning?: string
   extraCount?: number   // jumlah transaksi tambahan pada input multi-item
   totalAmount?: number  // total nominal seluruh segmen (untuk input multi-item)
+  // PATCH (audit fix #5): rincian setiap segmen multi-item supaya user bisa
+  // melihat sebelum tekan Enter — bukan sekadar badge "+N transaksi lagi".
+  items?: Array<{
+    description: string
+    amount: number
+    type?: 'expense' | 'income'
+    paymentMethod?: string
+    kind: 'transaction' | 'transfer' | 'saving'
+  }>
 }
 
 const EXAMPLE_HINTS = [
@@ -66,6 +75,9 @@ export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, au
   const [hintIndex, setHintIndex] = useState(0)
   const [localSubmitting, setLocalSubmitting] = useState(false)
   const [mode, setMode] = useState<InputMode>('auto')
+  // Audit fix #5: toggle untuk menampilkan rincian segmen multi-item.
+  // Defaultnya tertutup supaya tidak menutupi tombol Send saat satu transaksi.
+  const [showItems, setShowItems] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const locked = Boolean(isSubmitting || localSubmitting)
   // Memberi awalan "masuk " per-segmen agar input multi-item bermode pemasukan
@@ -115,6 +127,30 @@ export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, au
     const [first, ...rest] = entries
     const totalAmount = entries.reduce((sum, entry) => sum + entry.amount, 0)
     const extraCount = rest.length
+    // Audit fix #5: bangun ringkasan per-segmen untuk dropdown rincian.
+    // Type narrowing eksplisit: ParsedTransaction tidak punya
+    // fromWalletId/toWalletId, ParsedTransfer/ParsedSaving tidak punya
+    // paymentMethod/type. Discriminator-nya `kind`.
+    const items = entries.map(entry => {
+      // ParsedTransaction.kind bisa undefined ATAU 'transaction'; selain itu
+      // pasti transfer/saving yang berisi fromWalletId/toWalletId.
+      if (entry.kind === 'transfer' || entry.kind === 'saving') {
+        return {
+          description: entry.description,
+          amount: entry.amount,
+          kind: entry.kind,
+          type: undefined,
+          paymentMethod: `${entry.fromWalletId} → ${entry.toWalletId}`,
+        } as const
+      }
+      return {
+        description: entry.description,
+        amount: entry.amount,
+        kind: 'transaction' as const,
+        type: entry.type,
+        paymentMethod: entry.paymentMethod,
+      }
+    })
 
     if (first.kind === 'transfer' || first.kind === 'saving') {
       setPreview({
@@ -127,6 +163,7 @@ export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, au
         warning: first.warning,
         extraCount,
         totalAmount,
+        items,
       })
     } else {
       setPreview({
@@ -140,6 +177,7 @@ export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, au
         warning: first.warning,
         extraCount,
         totalAmount,
+        items,
       })
     }
   }, [value, parserExtras, withModePrefix])
@@ -166,6 +204,7 @@ export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, au
       if (allOk) {
         setValue('')
         setPreview(null)
+        setShowItems(false)
       }
     } finally {
       setLocalSubmitting(false)
@@ -236,9 +275,15 @@ export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, au
                 {preview.description}
               </span>
               {preview.extraCount ? (
-                <span className="text-[10px] font-semibold text-[var(--sk-cyan)] bg-[var(--sk-cyan-dim)] rounded px-1.5 py-0.5 mr-1.5">
-                  +{preview.extraCount} transaksi lagi
-                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowItems(prev => !prev)}
+                  aria-expanded={showItems}
+                  aria-label={showItems ? 'Sembunyikan rincian transaksi' : 'Lihat rincian semua transaksi'}
+                  className="text-[10px] font-semibold text-[var(--sk-cyan)] bg-[var(--sk-cyan-dim)] rounded px-1.5 py-0.5 mr-1.5 hover:opacity-80 transition-opacity"
+                >
+                  +{preview.extraCount} transaksi lagi {showItems ? '▴' : '▾'}
+                </button>
               ) : null}
               {preview.warning && (
                 <span className="text-[10px] text-[var(--sk-amber)] mr-1.5">
@@ -274,6 +319,43 @@ export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, au
               )}
             />
           </div>
+          {/* Audit fix #5: panel rincian per-segmen, hanya muncul bila user
+              menekan toggle "+N transaksi lagi". Memberi user kepastian
+              bahwa parser membagi input multi-item dengan benar sebelum
+              mereka menekan Enter. */}
+          {showItems && preview.items && preview.items.length > 1 && (
+            <div className="mt-1 rounded-xl border border-[var(--sk-border-2)] bg-[var(--sk-surface-2)] divide-y divide-[var(--sk-border)]">
+              {preview.items.map((item, idx) => (
+                <div key={idx} className="flex items-start justify-between gap-2 px-3 py-2 text-xs">
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium text-[var(--sk-text)] truncate capitalize">{item.description}</p>
+                    <p className="text-[10px] text-[var(--sk-text-dim)] truncate">
+                      {item.kind === 'transaction'
+                        ? getPaymentLabel(item.paymentMethod ?? 'tunai')
+                        : item.paymentMethod /* sudah formatted "from → to" */}
+                    </p>
+                  </div>
+                  <span
+                    className={cn(
+                      'text-xs font-bold tabular-nums flex-shrink-0',
+                      item.kind !== 'transaction'
+                        ? 'text-[var(--sk-cyan)]'
+                        : item.type === 'expense' ? 'text-[var(--sk-red)]' : 'text-[var(--sk-green)]'
+                    )}
+                  >
+                    {item.kind === 'transaction' && item.type === 'expense' ? '-' : item.kind === 'transaction' ? '+' : ''}
+                    {formatIDR(item.amount)}
+                  </span>
+                </div>
+              ))}
+              <div className="flex items-center justify-between gap-2 px-3 py-2 bg-[var(--sk-surface-3)]">
+                <span className="text-[11px] font-semibold text-[var(--sk-text-muted)] uppercase tracking-wide">Total</span>
+                <span className="text-sm font-bold tabular-nums text-[var(--sk-text)]">
+                  {formatIDR(preview.totalAmount ?? preview.amount)}
+                </span>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

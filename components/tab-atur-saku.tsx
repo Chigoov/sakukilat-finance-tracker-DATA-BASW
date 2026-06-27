@@ -6,7 +6,7 @@ import { useBudgetStore, useCustomizationStore, useWalletStore } from '@/lib/sto
 import { CATEGORY_CONFIG } from '@/components/category-badge'
 import { cn } from '@/lib/utils'
 import type { CustomPayment, CustomCategory } from '@/lib/parser'
-import { formatIDRCompact } from '@/lib/parser'
+import { formatIDRCompact, parseAmountToken } from '@/lib/parser'
 import type { WalletType } from '@/lib/mock-data'
 
 // ── Add item form ─────────────────────────────────────────────────────────────
@@ -90,19 +90,18 @@ function AddForm({ placeholder, keywordsLabel, onAdd, accent = 'var(--sk-cyan)' 
   )
 }
 
+// PATCH (audit fix #2): wrapper tipis ke pipeline parser utama.
+// Sebelumnya fungsi ini menjadi parser KEDUA yang lebih sederhana — tidak
+// mengenal suffix "rbu/rebu/jeti/m/miliar" dan keliru mem-parse "15.500" sebagai
+// 15.5 saat input manual saldo. Sekarang seluruh aplikasi pakai satu engine
+// parser yang sama (lib/parser.ts) sehingga konsisten.
 function parseAmountInput(raw: string): number {
-  const normalized = raw.trim().toLowerCase().replace(/\s+/g, '').replace(/^rp/, '')
-  if (!normalized) return 0
-  const match = normalized.match(/^(\d+(?:[.,]\d+)?)(k|rb|ribu|jt|juta)?$/)
-  if (!match) return 0
-
-  const numeric = Number(match[1].replace(',', '.'))
-  if (!Number.isFinite(numeric)) return 0
-
-  const suffix = match[2]
-  if (suffix === 'k' || suffix === 'rb' || suffix === 'ribu') return Math.round(numeric * 1_000)
-  if (suffix === 'jt' || suffix === 'juta') return Math.round(numeric * 1_000_000)
-  return Math.round(numeric)
+  // Hapus spasi di tengah ("Rp 15 500" → "Rp15500") supaya parseAmountToken
+  // memproses sebagai satu token tunggal yang valid.
+  const compact = raw.trim().replace(/\s+/g, '')
+  if (!compact) return 0
+  const parsed = parseAmountToken(compact)
+  return parsed && parsed > 0 ? Math.round(parsed) : 0
 }
 
 // ── Custom chip ───────────────────────────────────────────────────────────────
