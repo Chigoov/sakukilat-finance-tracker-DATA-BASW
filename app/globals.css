@@ -258,10 +258,63 @@ html[data-theme="light"] {
   pointer-events: none;
 }
 
-/* ── Glass surface utility ── */
+/* ── Glass surface utility (mobile GPU-safe) ─────────────────────
+   Stacked `backdrop-filter: blur()` on multiple `position: fixed`
+   layers corrupted Android Chrome's compositor on low-tier GPUs
+   (the "striped raster" glitch). Promoting each layer with
+   translateZ(0) + isolation, and disabling backdrop-filter
+   entirely on small viewports, fully resolves the artifact.
+*/
 .sk-glass {
   background: color-mix(in srgb, var(--sk-surface) 86%, transparent);
   backdrop-filter: blur(16px) saturate(180%);
   -webkit-backdrop-filter: blur(16px) saturate(180%);
   border: 1px solid var(--sk-border-2);
+  isolation: isolate;
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
+  contain: layout paint;
 }
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .sk-glass { background: var(--sk-surface); }
+}
+@media (max-width: 768px) {
+  .sk-glass {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: color-mix(in srgb, var(--sk-surface) 97%, transparent);
+  }
+  .sk-zen-blur { filter: blur(6px); }
+}
+
+/* ── Suggestion chips (smart-input) ───────────────────────── */
+.sk-suggest-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.625rem;
+  border-radius: 9999px;
+  background: var(--sk-surface-2);
+  border: 1px solid var(--sk-border);
+  font-size: 0.7rem;
+  color: var(--sk-text-muted);
+  white-space: nowrap;
+  transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease;
+  cursor: pointer;
+}
+.sk-suggest-chip:hover { background: var(--sk-surface-3); color: var(--sk-text); }
+.sk-suggest-chip:active { transform: scale(0.96); }
+.sk-suggest-chip[data-pulse="true"] { animation: sk-pulse-soft 1.4s ease-in-out infinite; }
+
+/* ── Voice-input listening indicator ───────────────────────── */
+.sk-mic-active {
+  background: var(--sk-red-dim) !important;
+  color: var(--sk-red) !important;
+  animation: sk-pulse-soft 1s ease-in-out infinite;
+}
+
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar { display: none; }

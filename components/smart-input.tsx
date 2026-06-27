@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
-import { ArrowRightLeft, PiggyBank, SendHorizonal, Sparkles, X, Loader2, TrendingDown, TrendingUp } from 'lucide-react'
+import { ArrowRightLeft, Mic, PiggyBank, SendHorizonal, Sparkles, X, Loader2, TrendingDown, TrendingUp } from 'lucide-react'
 import { parseEntry, formatIDR, type ParserExtras } from '@/lib/parser'
 import { cn } from '@/lib/utils'
 import { getCategoryConfig, getPaymentLabel } from './category-badge'
@@ -66,6 +66,70 @@ export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, au
   const [mode, setMode] = useState<InputMode>('auto')
   const inputRef = useRef<HTMLInputElement>(null)
   const locked = Boolean(isSubmitting || localSubmitting)
+
+  // ── Voice input (Web Speech API) ───────────────────────────
+  const [listening, setListening] = useState(false)
+  const [voiceSupported, setVoiceSupported] = useState(false)
+  type SpeechRecognitionLike = {
+    lang: string
+    interimResults: boolean
+    continuous: boolean
+    onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null
+    onerror: ((event: unknown) => void) | null
+    onend: (() => void) | null
+    start: () => void
+    stop: () => void
+  }
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const w = window as unknown as {
+      SpeechRecognition?: new () => SpeechRecognitionLike
+      webkitSpeechRecognition?: new () => SpeechRecognitionLike
+    }
+    const Ctor = w.SpeechRecognition ?? w.webkitSpeechRecognition
+    if (!Ctor) return
+    setVoiceSupported(true)
+    const rec = new Ctor()
+    rec.lang = 'id-ID'
+    rec.interimResults = false
+    rec.continuous = false
+    rec.onresult = (event) => {
+      try {
+        const transcript = event.results[0]?.[0]?.transcript ?? ''
+        if (transcript.trim()) {
+          setValue(prev => (prev.trim() ? `${prev} ${transcript}` : transcript).trim())
+        }
+      } catch { /* swallow */ }
+    }
+    rec.onerror = () => setListening(false)
+    rec.onend = () => setListening(false)
+    recognitionRef.current = rec
+    return () => {
+      try { rec.stop() } catch { /* no-op */ }
+      recognitionRef.current = null
+    }
+  }, [])
+
+  const handleVoiceToggle = useCallback(() => {
+    const rec = recognitionRef.current
+    if (!rec) return
+    if (listening) {
+      try { rec.stop() } catch { /* no-op */ }
+      setListening(false)
+      return
+    }
+    try {
+      rec.start()
+      setListening(true)
+      if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+        navigator.vibrate(12)
+      }
+    } catch {
+      setListening(false)
+    }
+  }, [listening])
   const effectiveValue =
     mode === 'income' && value.trim() ? `income ${value}` :
     mode === 'expense' && value.trim() ? `expense ${value}` :
@@ -249,6 +313,29 @@ export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, au
         </div>
       )}
 
+      {/* Tappable suggestion chips — instead of just a rotating placeholder.
+          Fills the input on tap so the user doesn't have to memorize the syntax. */}
+      {focused && !value.trim() && (
+        <div className="mb-2 flex gap-1.5 px-1 overflow-x-auto no-scrollbar" role="list">
+          {activeHints.slice(0, 4).map((hint) => (
+            <button
+              key={hint}
+              type="button"
+              role="listitem"
+              className="sk-suggest-chip"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                setValue(hint)
+                requestAnimationFrame(() => inputRef.current?.focus())
+              }}
+            >
+              <Sparkles className="w-3 h-3 text-[var(--sk-cyan)]" />
+              {hint}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Input container */}
       <div
         className={cn(
@@ -290,6 +377,25 @@ export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, au
             'caret-[var(--sk-cyan)] disabled:cursor-not-allowed disabled:opacity-60'
           )}
         />
+
+        {/* Voice input — tap & speak (Indonesian) */}
+        {voiceSupported && (
+          <button
+            type="button"
+            onClick={handleVoiceToggle}
+            disabled={locked}
+            aria-pressed={listening}
+            aria-label={listening ? 'Hentikan perekaman suara' : 'Rekam suara'}
+            title={listening ? 'Mendengarkan…' : 'Tap mic untuk ngomong'}
+            className={cn(
+              'w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 transition-all duration-150',
+              'bg-[var(--sk-surface-3)] text-[var(--sk-text-muted)]',
+              listening && 'sk-mic-active'
+            )}
+          >
+            <Mic className="w-4 h-4" />
+          </button>
+        )}
 
         {/* Clear / Submit */}
         {value && (

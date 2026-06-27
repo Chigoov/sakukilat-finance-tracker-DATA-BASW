@@ -587,6 +587,44 @@ function isCurrencyToken(token: string): boolean {
   return CURRENCY_TOKENS.has(normalizeToken(token))
 }
 
+// ── Split-bill detector ─────────────────────────────────────────────
+// Detects "bagi N", "patungan N", "split N", "share N", or inline "/N"
+// e.g. "makan padang 200k bagi 4 gopay" → amount /= 4, marker "[1/4]" prepended.
+const SPLIT_KEYWORDS = new Set<string>(['bagi', 'patungan', 'split', 'share', 'sharing'])
+function parseSplitDivisor(tokens: string[]): { divisor: number; indexes: Set<number> } | null {
+  const indexes = new Set<number>()
+  let divisor = 1
+
+  for (let i = 0; i < tokens.length - 1; i++) {
+    const kw = normalizeToken(tokens[i])
+    if (!SPLIT_KEYWORDS.has(kw)) continue
+    const next = normalizeToken(tokens[i + 1]).replace(/[^0-9]/g, '')
+    const num = Number.parseInt(next, 10)
+    if (Number.isFinite(num) && num >= 2 && num <= 99) {
+      divisor = num
+      indexes.add(i)
+      indexes.add(i + 1)
+      break
+    }
+  }
+
+  if (divisor === 1) {
+    for (let i = 0; i < tokens.length; i++) {
+      const m = /^\/(\d{1,2})$/.exec(tokens[i].trim())
+      if (m) {
+        const num = Number.parseInt(m[1], 10)
+        if (num >= 2 && num <= 99) {
+          divisor = num
+          indexes.add(i)
+          break
+        }
+      }
+    }
+  }
+
+  return divisor > 1 ? { divisor, indexes } : null
+}
+
 function findTrailingAmount(tokens: string[], extras?: ParserExtras): { amount: number; indexes: Set<number> } | null {
   let amountEndIndex = tokens.length - 1
   const dateHint = parseDateHint(tokens)
@@ -792,7 +830,10 @@ export function parseTransaction(input: string, extras?: ParserExtras): ParsedTr
   if (!parsedAmount) return null
 
   const adjustedAmount = applyAmountModifiers(parsedAmount.amount, tokens, parsedAmount.indexes)
-  const amount = adjustedAmount.amount
+  const splitInfo = parseSplitDivisor(tokens)
+  const amount = splitInfo
+    ? Math.round(adjustedAmount.amount / splitInfo.divisor)
+    : adjustedAmount.amount
   const amountIndexes = adjustedAmount.indexes
   const dateHint = parseDateHint(tokens)
   const paymentTokens = tokens.filter(token => isPaymentToken(token, extras))
@@ -814,6 +855,7 @@ export function parseTransaction(input: string, extras?: ParserExtras): ParsedTr
     const normalized = normalizeToken(t)
     const previous = i > 0 ? normalizeToken(tokens[i - 1]) : ''
     if (amountIndexes.has(i)) return false
+    if (splitInfo?.indexes.has(i)) return false
     if (dateHint?.indexes.has(i)) return false
     if (isCurrencyToken(t)) return false
     if (isPaymentToken(t, extras)) return false
@@ -824,7 +866,8 @@ export function parseTransaction(input: string, extras?: ParserExtras): ParsedTr
     return true
   })
 
-  const description = descTokens.join(' ').trim() || (type === 'income' ? 'Pemasukan' : 'Transaksi')
+  const baseDescription = descTokens.join(' ').trim() || (type === 'income' ? 'Pemasukan' : 'Transaksi')
+  const description = splitInfo ? `[1/${splitInfo.divisor}] ${baseDescription}` : baseDescription
 
   // ── Step 4: Classify ─────────────────────────────────────────────────────
   if (type === 'income' && paymentMethod === 'transfer') {
