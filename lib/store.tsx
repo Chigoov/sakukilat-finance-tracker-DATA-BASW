@@ -270,8 +270,10 @@ function applyProfileName(user: MockUser, profileName: string | null): MockUser 
 }
 
 function shouldUseLocalDemoAuth(): boolean {
+  // [BYPASS] Login Google dinonaktifkan: aplikasi langsung masuk dashboard sebagai DEMO_USER
+  // pada semua domain (localhost, Vercel, dll). Hapus baris di bawah untuk mengaktifkan kembali Firebase login.
   if (typeof window === 'undefined') return false
-  return ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname)
+  return true
 }
 
 function shouldUseRedirectAuth(): boolean {
