@@ -46,6 +46,13 @@ export const SpendingHeatmap = memo(function SpendingHeatmap() {
     let totalLocal = 0
     let hotDate: Date | null = null
 
+    // Align first cell with weekday header: pad with leading blanks
+    const firstDate = dayStart(today, -29)
+    const leadOffset = firstDate.getDay() // 0..6, 0 = Sunday (matches DAY_LABELS index)
+    for (let i = 0; i < leadOffset; i++) {
+      cellList.push({ key: `pad-${i}`, date: firstDate, total: -1, isToday: false })
+    }
+
     for (let offset = -29; offset <= 0; offset++) {
       const d = dayStart(today, offset)
       const k = dayKey(d)
@@ -96,6 +103,10 @@ export const SpendingHeatmap = memo(function SpendingHeatmap() {
             </span>
           ))}
           {cells.map(cell => {
+            // Placeholder (weekday alignment pad)
+            if (cell.total === -1) {
+              return <div key={cell.key} className="aspect-square rounded-md opacity-0" aria-hidden />
+            }
             const i = intensity(cell.total)
             const alpha = 0.08 + i * 0.92
             return (

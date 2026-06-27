@@ -349,7 +349,10 @@ export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, au
               type="button"
               role="listitem"
               className="sk-suggest-chip"
+              // Prevent input blur on tap so the chip bar stays visible during the click.
+              // iOS Safari fires touchstart before mousedown; cover both.
               onMouseDown={(e) => e.preventDefault()}
+              onTouchStart={(e) => e.preventDefault()}
               onClick={() => {
                 setValue(hint)
                 requestAnimationFrame(() => inputRef.current?.focus())

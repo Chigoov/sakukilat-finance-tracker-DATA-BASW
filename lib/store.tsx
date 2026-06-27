@@ -210,6 +210,7 @@ const DEMO_USER: MockUser = {
 }
 
 interface PersistedState {
+  schemaVersion?: number
   transactions?: Array<Omit<Transaction, 'date'> & { date: string }>
   wallets?: WalletAccount[]
   monthlyBudget?: number
@@ -219,6 +220,8 @@ interface PersistedState {
   themeMode?: ThemeMode
   profileName?: string | null
 }
+
+const CURRENT_SCHEMA_VERSION = 2
 
 function reviveTransactions(items: PersistedState['transactions']): Transaction[] | null {
   if (!Array.isArray(items)) return null
@@ -231,6 +234,12 @@ function reviveTransactions(items: PersistedState['transactions']): Transaction[
     .filter(item => Number.isFinite(item.date.getTime()))
 }
 
+function migratePersistedState(state: PersistedState): PersistedState {
+  // Future migrations dispatch by version. Today every version <= 2 is
+  // compatible; we just stamp the version so subsequent migrations can rely on it.
+  return { ...state, schemaVersion: CURRENT_SCHEMA_VERSION }
+}
+
 function loadPersistedState(): PersistedState {
   if (typeof window === 'undefined') return {}
 
@@ -238,7 +247,8 @@ function loadPersistedState(): PersistedState {
     const raw = window.localStorage.getItem(STORAGE_KEY)
     if (!raw) return {}
     const parsed = JSON.parse(raw) as PersistedState
-    return parsed && typeof parsed === 'object' ? parsed : {}
+    if (!parsed || typeof parsed !== 'object') return {}
+    return migratePersistedState(parsed)
   } catch (error) {
     console.warn('Gagal membaca auto-save SakuKilat:', error)
     return {}
@@ -249,7 +259,7 @@ function persistState(state: PersistedState) {
   if (typeof window === 'undefined') return
 
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ schemaVersion: CURRENT_SCHEMA_VERSION, ...state }))
   } catch (error) {
     console.warn('Gagal menyimpan auto-save SakuKilat:', error)
   }

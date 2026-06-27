@@ -884,9 +884,13 @@ export function parseTransaction(input: string, extras?: ParserExtras): ParsedTr
     !hasDescription       ? 0.4
     : hasExplicitMethod   ? 0.95
     :                       0.75
-  const confidence = !hasAmountContext && !hasExplicitMethod
-    ? Math.min(baseConfidence, 0.55)
-    : baseConfidence
+  const splitBoost = splitInfo ? 0.05 : 0
+  const confidence = Math.min(
+    1,
+    (!hasAmountContext && !hasExplicitMethod
+      ? Math.min(baseConfidence, 0.55)
+      : baseConfidence) + splitBoost
+  )
   const warning =
     amountWarning(tokens, amountIndexes, amount) ??
     (!hasAmountContext && !hasExplicitMethod ? 'Nominal belum jelas. Pakai format seperti Rp25.000 atau 25k.' : undefined)
