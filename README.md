@@ -24,6 +24,10 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
+## Data storage status
+
+SakuKilat currently stores transactions, wallets, and settings in the browser's localStorage. Google login is used for identity only; cross-device cloud sync is not enabled yet.
+
 ## Learn More
 
 To learn more, take a look at the following resources:
