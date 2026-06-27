@@ -1,21 +1,15 @@
-/**
- * @deprecated — DEPRECATED sejak audit fix #2.
- * File ini sebelumnya menyimpan parser nominal kedua yang LEBIH TERBATAS
- * daripada engine utama di lib/parser.ts (tidak mengenal "rbu", "rebu",
- * "jeti", "m", "miliar", dan keliru menafsirkan "15.500" sebagai desimal).
- *
- * Sekarang seluruh aplikasi menggunakan parser tunggal `parseAmountToken`
- * dari lib/parser.ts. Modul ini dipertahankan hanya sebagai shim untuk
- * importer eksternal lama; akan dihapus di rilis berikutnya.
- */
-import { parseAmountToken } from './parser'
-
-/**
- * @deprecated Pakai `parseAmountToken` dari `@/lib/parser`.
- */
 export function parseAmountInput(raw: string): number {
-  const compact = raw.trim().replace(/\s+/g, '')
-  if (!compact) return 0
-  const parsed = parseAmountToken(compact)
-  return parsed && parsed > 0 ? Math.round(parsed) : 0
+  const normalized = raw.trim().toLowerCase().replace(/\s+/g, '').replace(/^rp/, '')
+  if (!normalized) return 0
+
+  const match = normalized.match(/^(\d+(?:[.,]\d+)?)(k|rb|ribu|jt|juta)?$/)
+  if (!match) return 0
+
+  const numeric = Number(match[1].replace(',', '.'))
+  if (!Number.isFinite(numeric)) return 0
+
+  const suffix = match[2]
+  if (suffix === 'k' || suffix === 'rb' || suffix === 'ribu') return Math.round(numeric * 1_000)
+  if (suffix === 'jt' || suffix === 'juta') return Math.round(numeric * 1_000_000)
+  return Math.round(numeric)
 }
