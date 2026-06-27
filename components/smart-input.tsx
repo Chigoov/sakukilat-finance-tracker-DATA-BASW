@@ -53,11 +53,14 @@ interface SmartInputProps {
   className?: string
   parserExtras?: ParserExtras
   autoFocus?: boolean
+  /** Recent successful input strings from history. When provided, they
+   *  replace the static hint chips so users see their own past patterns. */
+  recentInputs?: string[]
 }
 
 type InputMode = 'auto' | 'expense' | 'income'
 
-export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, autoFocus }: SmartInputProps) {
+export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, autoFocus, recentInputs }: SmartInputProps) {
   const [value, setValue] = useState('')
   const [preview, setPreview] = useState<ParsePreview | null>(null)
   const [focused, setFocused] = useState(false)
@@ -139,6 +142,29 @@ export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, au
     if (mode === 'expense') return EXPENSE_HINTS
     return EXAMPLE_HINTS
   }, [mode])
+
+  // History-first chip suggestions. Dedupe + cap at 4. Fallback to static.
+  const chipHints = useMemo(() => {
+    const seen = new Set<string>()
+    const out: string[] = []
+    if (recentInputs) {
+      for (const raw of recentInputs) {
+        const cleaned = raw.replace(/^\[1\/\d+\]\s*/, '').trim().toLowerCase()
+        if (!cleaned || seen.has(cleaned)) continue
+        seen.add(cleaned)
+        out.push(cleaned)
+        if (out.length >= 4) break
+      }
+    }
+    if (out.length < 4) {
+      for (const h of activeHints) {
+        if (seen.has(h)) continue
+        out.push(h)
+        if (out.length >= 4) break
+      }
+    }
+    return out
+  }, [recentInputs, activeHints])
   const placeholderHint = activeHints[hintIndex % activeHints.length]
 
   // Cycle through example hints
@@ -317,7 +343,7 @@ export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, au
           Fills the input on tap so the user doesn't have to memorize the syntax. */}
       {focused && !value.trim() && (
         <div className="mb-2 flex gap-1.5 px-1 overflow-x-auto no-scrollbar" role="list">
-          {activeHints.slice(0, 4).map((hint) => (
+          {chipHints.map((hint) => (
             <button
               key={hint}
               type="button"

@@ -14,6 +14,8 @@ import { TransactionList } from '@/components/transaction-list'
 import { FilterTabs, type FilterTab } from '@/components/filter-tabs'
 import { BudgetCard } from '@/components/budget-card'
 import { WalletSummary } from '@/components/wallet-summary'
+import { SpendingHeatmap } from '@/components/spending-heatmap'
+import { StreakCelebration } from '@/components/streak-celebration'
 import { getCategoryHex, getCategoryConfig } from '@/components/category-badge'
 import { monthlyTotals, categoryBreakdown } from '@/lib/stats'
 import { formatIDR, formatIDRCompact } from '@/lib/parser'
@@ -459,6 +461,9 @@ export const TabBeranda = memo(function TabBeranda() {
         <BudgetCard />
       </div>
 
+      {/* 30-day spending heatmap — visual rhythm of expenses */}
+      <SpendingHeatmap />
+
       <section className="flex-1 md:px-8">
         <div className="sticky top-0 z-20 bg-[var(--sk-bg)] backdrop-blur-xl px-4 md:px-0 py-3 border-b border-[var(--sk-border)]">
           <FilterTabs active={activeFilter} onChange={setActiveFilter} counts={filterCounts} />
@@ -472,6 +477,9 @@ export const TabBeranda = memo(function TabBeranda() {
           />
         </div>
       </section>
+
+      {/* Milestone celebration overlay — fires once per day at 7/14/30/60/100/200/365 */}
+      <StreakCelebration streak={insightBar.streak} />
 
     </div>
   )

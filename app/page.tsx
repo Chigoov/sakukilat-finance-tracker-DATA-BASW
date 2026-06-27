@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { Home, BarChart2, Wallet, User, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -9,8 +9,10 @@ import {
   useCustomizationStore,
   useFeedbackStore,
   useTransactionActions,
+  useTransactionData,
   useTransactionStatus,
 } from '@/lib/store'
+import { formatIDRCompact } from '@/lib/parser'
 import { AuthGate } from '@/components/auth-gate'
 import { SmartInput } from '@/components/smart-input'
 import { TabBeranda } from '@/components/tab-beranda'
@@ -49,7 +51,22 @@ function AppShell() {
   const { toast, dismissToast } = useFeedbackStore()
   const { addTransaction } = useTransactionActions()
   const { isSubmitting } = useTransactionStatus()
+  const { transactions } = useTransactionData()
   const { parserExtras } = useCustomizationStore()
+
+  // Reconstruct natural-language hints from history so the chip suggestions
+  // reflect what the user actually types, not the generic example list.
+  const recentInputs = useMemo(() => {
+    if (!transactions || transactions.length === 0) return [] as string[]
+    return [...transactions]
+      .sort((a, b) => b.date.getTime() - a.date.getTime())
+      .slice(0, 16)
+      .filter(tx => tx.kind === 'transaction' || tx.kind === undefined)
+      .map(tx => {
+        const amt = formatIDRCompact(tx.amount).replace(/^Rp\s?/, '').toLowerCase()
+        return `${tx.description} ${amt} ${tx.paymentMethod}`.trim()
+      })
+  }, [transactions])
   const [activeTab, setActiveTab] = useState<Tab>('beranda')
   const [mounted, setMounted] = useState(false)
 
@@ -94,6 +111,7 @@ function AppShell() {
             onSubmit={addTransaction}
             isSubmitting={isSubmitting}
             parserExtras={parserExtras}
+            recentInputs={recentInputs}
           />
         </div>
       </div>
