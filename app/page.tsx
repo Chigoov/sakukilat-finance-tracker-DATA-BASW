@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { Home, BarChart2, Wallet, User, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -9,16 +9,14 @@ import {
   useCustomizationStore,
   useFeedbackStore,
   useTransactionActions,
-  useTransactionData,
   useTransactionStatus,
 } from '@/lib/store'
-import { formatIDRCompact } from '@/lib/parser'
 import { AuthGate } from '@/components/auth-gate'
-import { OnboardingTour } from '@/components/onboarding-tour'
 import { SmartInput } from '@/components/smart-input'
 import { TabBeranda } from '@/components/tab-beranda'
 import { TabSaku } from '@/components/tab-saku'
 import { TabProfil } from '@/components/tab-profil'
+import { OnboardingTour } from '@/components/onboarding-tour'
 
 type Tab = 'beranda' | 'saku' | 'rekapan' | 'profil'
 
@@ -52,22 +50,7 @@ function AppShell() {
   const { toast, dismissToast } = useFeedbackStore()
   const { addTransaction } = useTransactionActions()
   const { isSubmitting } = useTransactionStatus()
-  const { transactions } = useTransactionData()
   const { parserExtras } = useCustomizationStore()
-
-  // Reconstruct natural-language hints from history so the chip suggestions
-  // reflect what the user actually types, not the generic example list.
-  const recentInputs = useMemo(() => {
-    if (!transactions || transactions.length === 0) return [] as string[]
-    return [...transactions]
-      .sort((a, b) => b.date.getTime() - a.date.getTime())
-      .slice(0, 16)
-      .filter(tx => tx.kind === 'transaction' || tx.kind === undefined)
-      .map(tx => {
-        const amt = formatIDRCompact(tx.amount).replace(/^Rp\s?/, '').toLowerCase()
-        return `${tx.description} ${amt} ${tx.paymentMethod}`.trim()
-      })
-  }, [transactions])
   const [activeTab, setActiveTab] = useState<Tab>('beranda')
   const [mounted, setMounted] = useState(false)
 
@@ -98,9 +81,6 @@ function AppShell() {
 
   return (
     <div className="min-h-[100dvh] bg-[var(--sk-bg)] flex flex-col">
-      {/* First-run guided tour. Self-gates on localStorage — won't re-show. */}
-      <OnboardingTour />
-
       {/* ── Tab content area ── */}
       <main className="flex-1 overflow-y-auto pb-[150px] md:pb-[112px] md:mb-0">
         {activeTab === 'beranda' && <TabBeranda />}
@@ -115,7 +95,6 @@ function AppShell() {
             onSubmit={addTransaction}
             isSubmitting={isSubmitting}
             parserExtras={parserExtras}
-            recentInputs={recentInputs}
           />
         </div>
       </div>
@@ -188,6 +167,8 @@ function AppShell() {
       </nav>
 
       {/* ── Toast ── */}
+      <OnboardingTour userId={user.email} />
+
       {toast && (
         <div
           role="status"
