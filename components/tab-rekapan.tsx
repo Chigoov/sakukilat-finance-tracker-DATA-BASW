@@ -10,7 +10,7 @@ import { ChevronLeft, ChevronRight, X } from 'lucide-react'
 import { useTransactionActions, useTransactionData } from '@/lib/store'
 import { TransactionItem } from '@/components/transaction-item'
 import {
-  dailyAggregates, transactionsForDay, trendSeries, topSavedCategory,
+  dailyAggregates, transactionsForDay, trendSeries, trendSeriesForPeriod, topSavedCategory,
   categoryBreakdown, monthlyTotals,
   type TrendRange,
 } from '@/lib/stats'
@@ -20,6 +20,7 @@ import { getCategoryConfig, getCategoryHex } from '@/components/category-badge'
 import { cn } from '@/lib/utils'
 
 type RekapView = 'kalender' | 'tren'
+type TrendMode = TrendRange | 'custom'
 
 const DAYS_SHORT = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab']
 const MONTHS_ID = [
@@ -27,15 +28,21 @@ const MONTHS_ID = [
   'Juli','Agustus','September','Oktober','November','Desember',
 ]
 
-const RANGES: { id: TrendRange; label: string }[] = [
+const RANGES: { id: TrendMode; label: string }[] = [
   { id: '7d',  label: '7 Hari' },
   { id: '30d', label: '30 Hari' },
   { id: '1y',  label: '1 Tahun' },
+  { id: 'custom', label: 'Periode' },
 ]
 
 function dateFromDayKey(key: string): Date {
   const [year, month, day] = key.split('-').map(Number)
   return new Date(year, month - 1, day)
+}
+
+function dayKeyFromOffset(daysAgo: number): string {
+  const now = new Date()
+  return dayKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() - daysAgo))
 }
 
 // ── Custom tooltip for charts ─────────────────────────────────────────────────
@@ -447,21 +454,37 @@ function MonthlyAllocationCard() {
 
 function TrenView() {
   const { transactions } = useTransactionData()
-  const [range, setRange] = useState<TrendRange>('30d')
+  const [range, setRange] = useState<TrendMode>('30d')
+  const [customStart, setCustomStart] = useState(() => dayKeyFromOffset(29))
+  const [customEnd, setCustomEnd] = useState(() => dayKeyFromOffset(0))
 
-  const series = useMemo(() => trendSeries(transactions, range), [transactions, range])
+  const customStartDate = customStart ? dateFromDayKey(customStart) : null
+  const customEndDate = customEnd ? dateFromDayKey(customEnd) : null
+  const customValid = !!customStartDate && !!customEndDate && customStartDate <= customEndDate
+
+  const series = useMemo(() => {
+    if (range !== 'custom') return trendSeries(transactions, range)
+    if (!customValid || !customStartDate || !customEndDate) return []
+    return trendSeriesForPeriod(transactions, customStartDate, customEndDate)
+  }, [transactions, range, customValid, customStartDate, customEndDate])
 
   const totalExpense = useMemo(() => series.reduce((s, p) => s + p.expense, 0), [series])
   const totalIncome  = useMemo(() => series.reduce((s, p) => s + p.income, 0), [series])
   const saved = useMemo(() => topSavedCategory(transactions), [transactions])
   const savedConf = useMemo(() => saved ? getCategoryConfig(saved) : null, [saved])
+  const xInterval = useMemo(() => series.length > 12 ? Math.ceil(series.length / 6) : 0, [series.length])
+  const customRangeLabel = customValid && customStartDate && customEndDate
+    ? new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }).format(customStartDate)
+      + ' - '
+      + new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }).format(customEndDate)
+    : 'Pilih tanggal awal dan akhir yang valid'
 
   return (
     <div>
       <MonthlyAllocationCard />
 
       {/* Range selector */}
-      <div className="flex gap-1.5 mb-5">
+      <div className="flex flex-wrap gap-1.5 mb-3">
         {RANGES.map(r => (
           <button
             key={r.id}
@@ -477,6 +500,43 @@ function TrenView() {
           </button>
         ))}
       </div>
+
+      {range === 'custom' && (
+        <div className="rounded-2xl bg-[var(--sk-surface)] border border-[var(--sk-border)] p-3.5 mb-5">
+          <div className="grid grid-cols-2 gap-2 mb-2">
+            <label className="min-w-0">
+              <span className="block text-[10px] text-[var(--sk-text-dim)] uppercase tracking-widest mb-1">
+                Dari
+              </span>
+              <input
+                type="date"
+                value={customStart}
+                onInput={e => setCustomStart(e.currentTarget.value)}
+                onChange={e => setCustomStart(e.target.value)}
+                className="w-full min-w-0 rounded-lg border border-[var(--sk-border)] bg-[var(--sk-surface-2)] px-2.5 py-2 text-xs text-[var(--sk-text)] outline-none focus:border-[var(--sk-cyan)]"
+              />
+            </label>
+            <label className="min-w-0">
+              <span className="block text-[10px] text-[var(--sk-text-dim)] uppercase tracking-widest mb-1">
+                Sampai
+              </span>
+              <input
+                type="date"
+                value={customEnd}
+                onInput={e => setCustomEnd(e.currentTarget.value)}
+                onChange={e => setCustomEnd(e.target.value)}
+                className="w-full min-w-0 rounded-lg border border-[var(--sk-border)] bg-[var(--sk-surface-2)] px-2.5 py-2 text-xs text-[var(--sk-text)] outline-none focus:border-[var(--sk-cyan)]"
+              />
+            </label>
+          </div>
+          <p className={cn(
+            'text-[11px] leading-relaxed',
+            customValid ? 'text-[var(--sk-text-dim)]' : 'text-[var(--sk-red)]'
+          )}>
+            History: {customRangeLabel}
+          </p>
+        </div>
+      )}
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 gap-3 mb-5">
@@ -495,16 +555,17 @@ function TrenView() {
         <p className="text-xs font-medium text-[var(--sk-text-muted)] mb-3">Pengeluaran vs Pemasukan</p>
         <div className="h-[180px]">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={series} barGap={2} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+            <BarChart data={series} barGap={2} margin={{ top: 0, right: 0, left: 4, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--sk-border)" vertical={false} />
               <XAxis
                 dataKey="label"
                 tick={{ fill: 'var(--sk-text-dim)', fontSize: 10 }}
                 tickLine={false}
                 axisLine={false}
-                interval={range === '30d' ? 4 : 0}
+                interval={xInterval}
               />
               <YAxis
+                width={82}
                 tick={{ fill: 'var(--sk-text-dim)', fontSize: 10 }}
                 tickLine={false}
                 axisLine={false}
@@ -523,16 +584,17 @@ function TrenView() {
         <p className="text-xs font-medium text-[var(--sk-text-muted)] mb-3">Tren Pengeluaran</p>
         <div className="h-[140px]">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={series} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+            <LineChart data={series} margin={{ top: 0, right: 0, left: 4, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--sk-border)" vertical={false} />
               <XAxis
                 dataKey="label"
                 tick={{ fill: 'var(--sk-text-dim)', fontSize: 10 }}
                 tickLine={false}
                 axisLine={false}
-                interval={range === '30d' ? 4 : 0}
+                interval={xInterval}
               />
               <YAxis
+                width={82}
                 tick={{ fill: 'var(--sk-text-dim)', fontSize: 10 }}
                 tickLine={false}
                 axisLine={false}
