@@ -72,7 +72,7 @@ export function RecurringManager() {
             className="ml-auto text-[10px] font-semibold text-[var(--sk-amber)] bg-[var(--sk-amber-dim)] px-2 py-0.5 rounded-full"
             title="Jatuh tempo akan otomatis tercatat saat kamu buka app"
           >
-            {dueCount} due
+            {dueCount} jatuh tempo
           </span>
         )}
         {dueCount === 0 && templates.length > 0 && (
@@ -81,6 +81,11 @@ export function RecurringManager() {
           </span>
         )}
       </div>
+
+      <p className="text-xs text-[var(--sk-text-dim)] leading-relaxed mb-3">
+        Untuk gaji, langganan, cicilan, atau transaksi lain yang berulang. Saat jadwalnya jatuh tempo,
+        SakuKilat akan mencatatnya otomatis ketika app dibuka; tombol petir mencatat satu transaksi sekarang.
+      </p>
 
       {/* Existing templates */}
       {templates.length > 0 && (
