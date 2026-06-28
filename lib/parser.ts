@@ -1016,20 +1016,11 @@ export function formatIDR(amount: number): string {
     currency: 'IDR',
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
-  }).format(amount)
+  }).format(amount).replace(/\s+/g, ' ')
 }
 
 export function formatIDRCompact(amount: number): string {
-  if (amount >= 1_000_000_000) {
-    return `Rp ${(amount / 1_000_000_000).toFixed(1)}M`
-  }
-  if (amount >= 1_000_000) {
-    return `Rp ${(amount / 1_000_000).toFixed(1)}jt`
-  }
-  if (amount >= 1_000) {
-    return `Rp ${(amount / 1_000).toFixed(0)}rb`
-  }
-  return `Rp ${amount.toLocaleString('id-ID')}`
+  return formatIDR(amount)
 }
 
 export function formatDate(date: Date): string {
