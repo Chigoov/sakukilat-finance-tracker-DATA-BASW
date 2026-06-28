@@ -249,10 +249,10 @@ export function monthlyBudgetStatus(
   const start = new Date(ref.getFullYear(), ref.getMonth(), 1)
   const tomorrow = new Date(ref.getFullYear(), ref.getMonth(), ref.getDate() + 1)
   const todayKey = dayKey(ref)
-  const weekOfMonth = Math.floor((dayOfMonth - 1) / 7) + 1
-  const totalWeeks = Math.ceil(daysInMonth / 7)
+  const totalWeeks = 4
+  const weekOfMonth = Math.min(totalWeeks, Math.floor((dayOfMonth - 1) / 7) + 1)
   const weekStartDay = (weekOfMonth - 1) * 7 + 1
-  const weekEndDay = Math.min(daysInMonth, weekStartDay + 6)
+  const weekEndDay = weekOfMonth === totalWeeks ? daysInMonth : Math.min(daysInMonth, weekStartDay + 6)
   const weekStart = new Date(ref.getFullYear(), ref.getMonth(), weekStartDay)
   const weekEndExclusive = new Date(ref.getFullYear(), ref.getMonth(), weekEndDay + 1)
   const remainingWeekDays = Math.max(1, weekEndDay - dayOfMonth + 1)
@@ -271,7 +271,7 @@ export function monthlyBudgetStatus(
   const safeBudget = Math.max(0, budget)
   const remaining = safeBudget - spent
   const baseDailyBudget = safeBudget / daysInMonth
-  const baseWeeklyBudget = baseDailyBudget * (weekEndDay - weekStartDay + 1)
+  const baseWeeklyBudget = safeBudget / totalWeeks
   const weeklyRemaining = baseWeeklyBudget - weeklySpent
   const dynamicDailyBudget = Math.max(0, weeklyRemaining / remainingWeekDays)
   const overBudget = spent > safeBudget && safeBudget > 0

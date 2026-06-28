@@ -3,8 +3,8 @@
 /**
  * SakuKilat local-first store
  * ---------------------------------
- * Data is stored in this browser via localStorage. Google login identifies
- * the user, but transaction sync between devices is not wired yet.
+ * Data stays local-first for snappy UX, then syncs to Firestore when the
+ * user is logged in with Google.
  */
 
 import {
@@ -35,7 +35,13 @@ import {
   signOut as firebaseSignOut,
   type User as FirebaseUser,
 } from 'firebase/auth'
-import { firebaseAuth, googleProvider, initFirebaseAnalytics } from './firebase'
+import {
+  firebaseAuth,
+  googleProvider,
+  initFirebaseAnalytics,
+  loadUserCloudSlice,
+  saveUserCloudSlice,
+} from './firebase'
 import {
   parseEntry,
   type ParserExtras,
@@ -76,6 +82,7 @@ export interface ManualTransactionInput {
   amount: number
   type: 'expense' | 'income'
   category: string
+  subcategory?: string
   paymentMethod: string
   date?: Date
 }
@@ -105,7 +112,7 @@ interface StoreValue {
   addWallet: (label: string, type: WalletType, balance: number, keywords: string[]) => void
   updateWallet: (id: string, updates: { label: string; type: WalletType; balance: number; keywords: string[] }) => void
   removeWallet: (id: string) => void
-  transferMoney: (fromWalletId: string, toWalletId: string, amount: number, note?: string, kind?: TransactionKind) => boolean
+  transferMoney: (fromWalletId: string, toWalletId: string, amount: number, note?: string, kind?: TransactionKind, date?: Date) => boolean
   saveMoney: (fromWalletId: string, amount: number, toWalletId?: string) => boolean
 
   // budget
@@ -115,10 +122,13 @@ interface StoreValue {
   // custom slang
   customPayments: CustomPayment[]
   customCategories: CustomCategory[]
+  hiddenPaymentIds: string[]
   addCustomPayment: (label: string, keywords: string[]) => void
+  updateCustomPayment: (id: string, updates: { label: string; keywords: string[] }) => void
   removeCustomPayment: (id: string) => void
-  addCustomCategory: (label: string, keywords: string[]) => void
-  updateCustomCategory: (id: string, updates: { label: string; keywords: string[] }) => void
+  restoreHiddenPayment: (id: string) => void
+  addCustomCategory: (label: string, keywords: string[], subcategories?: string[]) => void
+  updateCustomCategory: (id: string, updates: { label: string; keywords: string[]; subcategories?: string[] }) => void
   removeCustomCategory: (id: string) => void
   parserExtras: ParserExtras
 
@@ -128,6 +138,7 @@ interface StoreValue {
   toggleZen: () => void
   setThemeMode: (mode: ThemeMode) => void
   updateProfile: (name: string) => void
+  updateProfileAvatar: (avatarUrl: string | null) => void
 
   // feedback
   toast: Toast | null
@@ -141,6 +152,7 @@ interface AuthStore {
   signInWithGoogle: () => Promise<void>
   signOut: () => void
   updateProfile: (name: string) => void
+  updateProfileAvatar: (avatarUrl: string | null) => void
 }
 
 interface TransactionDataStore {
@@ -166,7 +178,7 @@ interface WalletStore {
   addWallet: (label: string, type: WalletType, balance: number, keywords: string[]) => void
   updateWallet: (id: string, updates: { label: string; type: WalletType; balance: number; keywords: string[] }) => void
   removeWallet: (id: string) => void
-  transferMoney: (fromWalletId: string, toWalletId: string, amount: number, note?: string, kind?: TransactionKind) => boolean
+  transferMoney: (fromWalletId: string, toWalletId: string, amount: number, note?: string, kind?: TransactionKind, date?: Date) => boolean
   saveMoney: (fromWalletId: string, amount: number, toWalletId?: string) => boolean
 }
 
@@ -178,10 +190,13 @@ interface BudgetStore {
 interface CustomizationStore {
   customPayments: CustomPayment[]
   customCategories: CustomCategory[]
+  hiddenPaymentIds: string[]
   addCustomPayment: (label: string, keywords: string[]) => void
+  updateCustomPayment: (id: string, updates: { label: string; keywords: string[] }) => void
   removeCustomPayment: (id: string) => void
-  addCustomCategory: (label: string, keywords: string[]) => void
-  updateCustomCategory: (id: string, updates: { label: string; keywords: string[] }) => void
+  restoreHiddenPayment: (id: string) => void
+  addCustomCategory: (label: string, keywords: string[], subcategories?: string[]) => void
+  updateCustomCategory: (id: string, updates: { label: string; keywords: string[]; subcategories?: string[] }) => void
   removeCustomCategory: (id: string) => void
   parserExtras: ParserExtras
 }
@@ -218,7 +233,7 @@ const SEED_CATEGORIES: CustomCategory[] = [
   { id: 'peliharaan', label: 'Peliharaan', keywords: ['kucing', 'anjing', 'catfood', 'vet', 'grooming'] },
 ]
 const DEFAULT_MONTHLY_BUDGET = 0
-const STORAGE_KEY = 'sakukilat:v2:local-state'
+export const STORAGE_KEY = 'sakukilat:v2:local-state'
 const DEMO_USER: MockUser = {
   name: 'Teman SakuKilat',
   givenName: 'Teman',
@@ -233,12 +248,14 @@ interface PersistedState {
   monthlyBudget?: number
   customPayments?: CustomPayment[]
   customCategories?: CustomCategory[]
+  hiddenPaymentIds?: string[]
   zenMode?: boolean
   themeMode?: ThemeMode
   profileName?: string | null
+  profileAvatarUrl?: string | null
 }
 
-const CURRENT_SCHEMA_VERSION = 3
+export const CURRENT_SCHEMA_VERSION = 3
 
 // ── v2 → v3 demo-data purge helpers ─────────────────────────────────────────
 // Old builds shipped with hard-coded seed transactions and pre-filled wallet
@@ -347,21 +364,19 @@ function firstName(name: string): string {
   return name.trim().split(/\s+/)[0] || 'Teman'
 }
 
-function applyProfileName(user: MockUser, profileName: string | null): MockUser {
+function applyProfileSettings(user: MockUser, profileName: string | null, profileAvatarUrl: string | null): MockUser {
   const name = profileName?.trim()
-  if (!name) return user
+  const avatarUrl = profileAvatarUrl?.trim()
   return {
     ...user,
-    name,
-    givenName: firstName(name),
+    name: name || user.name,
+    givenName: name ? firstName(name) : user.givenName,
+    avatarUrl: avatarUrl || user.avatarUrl,
   }
 }
 
 function shouldUseLocalDemoAuth(): boolean {
-  // [BYPASS] Login Google dinonaktifkan: aplikasi langsung masuk dashboard sebagai DEMO_USER
-  // pada semua domain (localhost, Vercel, dll). Hapus baris di bawah untuk mengaktifkan kembali Firebase login.
-  if (typeof window === 'undefined') return false
-  return true
+  return false
 }
 
 function shouldUseRedirectAuth(): boolean {
@@ -489,13 +504,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [customCategories, setCustomCategories] = useState<CustomCategory[]>(() =>
     Array.isArray(persisted.customCategories) ? persisted.customCategories : SEED_CATEGORIES
   )
+  const [hiddenPaymentIds, setHiddenPaymentIds] = useState<string[]>(() =>
+    Array.isArray(persisted.hiddenPaymentIds) ? persisted.hiddenPaymentIds : []
+  )
 
   const [zenMode, setZenMode] = useState(() => Boolean(persisted.zenMode))
   const [themeMode, setThemeModeState] = useState<ThemeMode>(() => persisted.themeMode ?? 'dark')
   const [profileName, setProfileName] = useState<string | null>(() => persisted.profileName ?? null)
+  const [profileAvatarUrl, setProfileAvatarUrl] = useState<string | null>(() => persisted.profileAvatarUrl ?? null)
   const [toast, setToast] = useState<Toast | null>(null)
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const cloudSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const profileNameRef = useRef(profileName)
+  const profileAvatarRef = useRef(profileAvatarUrl)
+  const [cloudHydrated, setCloudHydrated] = useState(false)
 
   const dismissToast = useCallback(() => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
@@ -517,39 +539,125 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [profileName])
 
   useEffect(() => {
+    profileAvatarRef.current = profileAvatarUrl
+  }, [profileAvatarUrl])
+
+  const applyPersistedSnapshot = useCallback((state: PersistedState) => {
+    const next = migratePersistedState(state)
+    const revivedTransactions = reviveTransactions(next.transactions)
+    if (revivedTransactions) setTransactions(revivedTransactions)
+    if (Array.isArray(next.wallets) && next.wallets.length > 0) setWallets(next.wallets)
+    if (typeof next.monthlyBudget === 'number') setMonthlyBudgetState(next.monthlyBudget)
+    if (Array.isArray(next.customPayments)) setCustomPayments(next.customPayments)
+    if (Array.isArray(next.customCategories)) setCustomCategories(next.customCategories)
+    if (Array.isArray(next.hiddenPaymentIds)) setHiddenPaymentIds(next.hiddenPaymentIds)
+    if (typeof next.zenMode === 'boolean') setZenMode(next.zenMode)
+    if (next.themeMode) setThemeModeState(next.themeMode)
+    if ('profileName' in next) setProfileName(next.profileName ?? null)
+    if ('profileAvatarUrl' in next) setProfileAvatarUrl(next.profileAvatarUrl ?? null)
+  }, [])
+
+  const persistedSnapshot = useMemo<PersistedState>(() => ({
+    transactions: transactions.map(transaction => ({
+      ...transaction,
+      date: transaction.date.toISOString(),
+    })),
+    wallets,
+    monthlyBudget,
+    customPayments,
+    customCategories,
+    hiddenPaymentIds,
+    zenMode,
+    themeMode,
+    profileName,
+    profileAvatarUrl,
+  }), [
+    transactions,
+    wallets,
+    monthlyBudget,
+    customPayments,
+    customCategories,
+    hiddenPaymentIds,
+    zenMode,
+    themeMode,
+    profileName,
+    profileAvatarUrl,
+  ])
+
+  useEffect(() => {
+    let cancelled = false
+
     void initFirebaseAnalytics()
     void getRedirectResult(firebaseAuth)
-      .then(result => {
-        if (!result?.user) return
-        setUser(applyProfileName(mapFirebaseUser(result.user), profileNameRef.current))
+      .then(async result => {
+        if (!result?.user || cancelled) return
+        setUser(applyProfileSettings(mapFirebaseUser(result.user), profileNameRef.current, profileAvatarRef.current))
+        try {
+          const remoteState = await loadUserCloudSlice<PersistedState>(result.user.uid, 'main')
+          if (!cancelled && remoteState && typeof remoteState === 'object') {
+            applyPersistedSnapshot(remoteState)
+          }
+        } catch (error) {
+          console.error('SakuKilat redirect cloud restore failed:', error)
+        } finally {
+          if (!cancelled) {
+            setCloudHydrated(true)
+            setAuthReady(true)
+          }
+        }
         showToast('Login Google berhasil. Saku siap dipakai.', 'success')
       })
       .catch(error => {
         console.error('Firebase Google redirect sign-in failed:', error)
+        if (cancelled) return
         showToast('Login Google gagal. Coba lagi sebentar.', 'error')
       })
 
     const unsubscribe = onAuthStateChanged(
       firebaseAuth,
       currentUser => {
-        const nextUser = currentUser
-          ? mapFirebaseUser(currentUser)
-          : shouldUseLocalDemoAuth()
-            ? DEMO_USER
-            : null
+        void (async () => {
+          if (!currentUser) {
+            setCloudHydrated(false)
+            const nextUser = shouldUseLocalDemoAuth() ? DEMO_USER : null
+            setUser(nextUser ? applyProfileSettings(nextUser, profileNameRef.current, profileAvatarRef.current) : null)
+            setAuthReady(true)
+            return
+          }
 
-        setUser(nextUser ? applyProfileName(nextUser, profileNameRef.current) : null)
-        setAuthReady(true)
+          setUser(applyProfileSettings(mapFirebaseUser(currentUser), profileNameRef.current, profileAvatarRef.current))
+
+          try {
+            const remoteState = await loadUserCloudSlice<PersistedState>(currentUser.uid, 'main')
+            if (cancelled) return
+            if (remoteState && typeof remoteState === 'object') {
+              applyPersistedSnapshot(remoteState)
+            }
+          } catch (error) {
+            console.error('SakuKilat cloud restore failed:', error)
+            if (!cancelled) {
+              showToast('Data cloud belum bisa ditarik. Pakai data perangkat ini dulu.', 'error')
+            }
+          } finally {
+            if (!cancelled) {
+              setCloudHydrated(true)
+              setAuthReady(true)
+            }
+          }
+        })()
       },
       error => {
         console.error('Firebase auth session restore failed:', error)
-        setUser(shouldUseLocalDemoAuth() ? applyProfileName(DEMO_USER, profileNameRef.current) : null)
+        setUser(shouldUseLocalDemoAuth() ? applyProfileSettings(DEMO_USER, profileNameRef.current, profileAvatarRef.current) : null)
         setAuthReady(true)
       }
     )
 
-    return unsubscribe
-  }, [showToast])
+    return () => {
+      cancelled = true
+      unsubscribe()
+    }
+  }, [applyPersistedSnapshot, showToast])
 
   useEffect(() => {
     const root = document.documentElement
@@ -572,55 +680,56 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [themeMode])
 
   useEffect(() => {
-    persistState({
-      transactions: transactions.map(transaction => ({
-        ...transaction,
-        date: transaction.date.toISOString(),
-      })),
-      wallets,
-      monthlyBudget,
-      customPayments,
-      customCategories,
-      zenMode,
-      themeMode,
-      profileName,
-    })
-  }, [
-    transactions,
-    wallets,
-    monthlyBudget,
-    customPayments,
-    customCategories,
-    zenMode,
-    themeMode,
-    profileName,
-  ])
+    persistState(persistedSnapshot)
+  }, [persistedSnapshot])
+
+  useEffect(() => {
+    const currentUser = firebaseAuth.currentUser
+    if (!cloudHydrated || !currentUser) return
+
+    if (cloudSaveTimerRef.current) clearTimeout(cloudSaveTimerRef.current)
+    cloudSaveTimerRef.current = setTimeout(() => {
+      void saveUserCloudSlice(currentUser.uid, 'main', persistedSnapshot).catch(error => {
+        console.error('SakuKilat cloud save failed:', error)
+      })
+      cloudSaveTimerRef.current = null
+    }, 700)
+
+    return () => {
+      if (cloudSaveTimerRef.current) clearTimeout(cloudSaveTimerRef.current)
+    }
+  }, [cloudHydrated, persistedSnapshot])
 
   // Keep the display registry in sync with custom slang
   useEffect(() => {
     registerCustomCategories(customCategories)
     registerCustomPayments([
-      ...wallets.map(wallet => ({ id: wallet.id, label: wallet.label })),
+      ...wallets
+        .filter(wallet => !hiddenPaymentIds.includes(wallet.id))
+        .map(wallet => ({ id: wallet.id, label: wallet.label })),
       ...customPayments,
     ])
-  }, [customCategories, customPayments, wallets])
+  }, [customCategories, customPayments, hiddenPaymentIds, wallets])
 
   useEffect(() => {
     return () => {
       if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
+      if (cloudSaveTimerRef.current) clearTimeout(cloudSaveTimerRef.current)
     }
   }, [])
 
   const parserExtras = useMemo<ParserExtras>(
     () => ({
       payments: [
-        ...wallets.map(wallet => ({ id: wallet.id, label: wallet.label, keywords: wallet.keywords })),
+        ...wallets
+          .filter(wallet => !hiddenPaymentIds.includes(wallet.id))
+          .map(wallet => ({ id: wallet.id, label: wallet.label, keywords: wallet.keywords })),
         ...customPayments.map(p => ({ id: p.id, label: p.label, keywords: p.keywords })),
       ],
-      categories: customCategories.map(c => ({ id: c.id, label: c.label, keywords: c.keywords })),
+      categories: customCategories.map(c => ({ id: c.id, label: c.label, keywords: c.keywords, subcategories: c.subcategories })),
       lastActiveWalletId,
     }),
-    [wallets, customPayments, customCategories, lastActiveWalletId]
+    [wallets, customPayments, customCategories, hiddenPaymentIds, lastActiveWalletId]
   )
 
   // ── Auth ──────────────────────────────────────────────────────────────────
@@ -632,7 +741,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
 
       const result = await signInWithPopup(firebaseAuth, googleProvider)
-      setUser(applyProfileName(mapFirebaseUser(result.user), profileNameRef.current))
+      setUser(applyProfileSettings(mapFirebaseUser(result.user), profileNameRef.current, profileAvatarRef.current))
       showToast('Login Google berhasil. Saku siap dipakai.', 'success')
     } catch (error) {
       console.error('Firebase Google sign-in failed:', error)
@@ -640,7 +749,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         ? String((error as { code?: unknown }).code)
         : ''
 
-      if (code.includes('popup-blocked') || code.includes('popup-closed-by-user') || code.includes('cancelled-popup-request')) {
+      if (
+        !code.includes('invalid-api-key') &&
+        !code.includes('unauthorized-domain') &&
+        !code.includes('operation-not-allowed')
+      ) {
         await signInWithRedirect(firebaseAuth, googleProvider)
         return
       }
@@ -658,13 +771,38 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
 
     setProfileName(trimmed)
-    setUser(prev => prev ? { ...prev, name: trimmed, givenName: firstName(trimmed) } : prev)
+    setUser(prev => {
+      if (!prev) return prev
+      const baseUser =
+        firebaseAuth.currentUser
+          ? mapFirebaseUser(firebaseAuth.currentUser)
+          : shouldUseLocalDemoAuth()
+            ? DEMO_USER
+            : prev
+      return applyProfileSettings(baseUser, trimmed, profileAvatarRef.current)
+    })
     showToast('Profil diperbarui.', 'success')
+  }, [showToast])
+
+  const updateProfileAvatar = useCallback((avatarUrl: string | null) => {
+    const trimmed = avatarUrl?.trim() || null
+    setProfileAvatarUrl(trimmed)
+    setUser(prev => {
+      if (!prev) return prev
+      const baseUser =
+        firebaseAuth.currentUser
+          ? mapFirebaseUser(firebaseAuth.currentUser)
+          : shouldUseLocalDemoAuth()
+            ? DEMO_USER
+            : prev
+      return applyProfileSettings(baseUser, profileNameRef.current, trimmed)
+    })
+    showToast(trimmed ? 'Foto profil diperbarui.' : 'Foto profil dikembalikan ke bawaan.', 'success')
   }, [showToast])
 
   const signOut = useCallback(async () => {
     if (shouldUseLocalDemoAuth()) {
-      setUser(applyProfileName(DEMO_USER, profileNameRef.current))
+      setUser(applyProfileSettings(DEMO_USER, profileNameRef.current, profileAvatarRef.current))
       showToast('Mode demo lokal tetap aktif.', 'success')
       return
     }
@@ -751,7 +889,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   )
 
   const createMove = useCallback(
-    (fromWalletId: string, toWalletId: string, amount: number, note = 'Pindah uang', kind: TransactionKind = 'transfer') => {
+    (fromWalletId: string, toWalletId: string, amount: number, note = 'Pindah uang', kind: TransactionKind = 'transfer', date = new Date()) => {
       const roundedAmount = Math.round(amount)
       if (!fromWalletId || !toWalletId || fromWalletId === toWalletId || roundedAmount <= 0) return null
 
@@ -766,7 +904,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         paymentMethod: fromWalletId,
         fromWalletId,
         toWalletId,
-        date: new Date(),
+        date,
       }
 
       if (walletDropsBelowZero(wallets, move)) return null
@@ -783,8 +921,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   )
 
   const transferMoney = useCallback(
-    (fromWalletId: string, toWalletId: string, amount: number, note = 'Pindah uang', kind: TransactionKind = 'transfer') => {
-      const move = createMove(fromWalletId, toWalletId, amount, note, kind)
+    (fromWalletId: string, toWalletId: string, amount: number, note = 'Pindah uang', kind: TransactionKind = 'transfer', date?: Date) => {
+      const move = createMove(fromWalletId, toWalletId, amount, note, kind, date)
       if (!move) {
         showToast('Pindah uang belum valid atau saldo saku asal tidak cukup.', 'error')
         return false
@@ -833,6 +971,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         amount: parsed.amount,
         type: parsed.type,
         category: parsed.category,
+        subcategory: parsed.subcategory,
         paymentMethod: parsed.paymentMethod,
         date: parsed.date ?? new Date(),
       }
@@ -881,19 +1020,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
    *  precise wallet assignment. Same soft-balance semantics. */
   const addManualTransaction = useCallback(
     async (input: ManualTransactionInput): Promise<boolean> => {
-      if (!input.description.trim() || !Number.isFinite(input.amount) || input.amount <= 0) {
-        showToast('Lengkapi deskripsi dan nominal dulu.', 'error')
+      if (!Number.isFinite(input.amount) || input.amount <= 0) {
+        showToast('Lengkapi nominal dulu.', 'error')
         return false
       }
       setIsSubmitting(true)
       const optimisticId = generateId()
+      const description = input.description.trim() || (input.type === 'income' ? 'Pemasukan manual' : 'Pengeluaran manual')
       const optimistic: Transaction = {
         id: optimisticId,
         kind: 'transaction',
-        description: input.description.trim(),
+        description,
         amount: Math.round(input.amount),
         type: input.type,
         category: input.category,
+        subcategory: input.subcategory,
         paymentMethod: input.paymentMethod,
         date: input.date ?? new Date(),
       }
@@ -986,6 +1127,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     (label: string, keywords: string[]) => {
       const id = slugify(label)
       const kws = Array.from(new Set([id, ...keywords.map(k => k.toLowerCase().trim()).filter(Boolean)]))
+      setHiddenPaymentIds(prev => prev.filter(item => item !== id))
       setCustomPayments(prev =>
         prev.some(p => p.id === id) ? prev : [...prev, { id, label: label.trim(), keywords: kws }]
       )
@@ -999,16 +1141,56 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [showToast]
   )
 
+  const updateCustomPayment = useCallback(
+    (id: string, updates: { label: string; keywords: string[] }) => {
+      const label = updates.label.trim()
+      if (!label) {
+        showToast('Nama metode bayar tidak boleh kosong.', 'error')
+        return
+      }
+      const kws = normalizeKeywords(id, updates.keywords)
+      setHiddenPaymentIds(prev => prev.filter(item => item !== id))
+      setCustomPayments(prev =>
+        prev.some(payment => payment.id === id)
+          ? prev.map(payment => payment.id === id ? { id, label, keywords: kws } : payment)
+          : [...prev, { id, label, keywords: kws }]
+      )
+      setWallets(prev =>
+        prev.map(wallet => wallet.id === id ? { ...wallet, label, keywords: kws } : wallet)
+      )
+      showToast(`Metode "${label}" diperbarui.`, 'success')
+    },
+    [showToast]
+  )
+
   const removeCustomPayment = useCallback((id: string) => {
+    const isBuiltin = [
+      'gopay', 'ovo', 'dana', 'shopeepay',
+      'bca', 'bni', 'bri', 'mandiri',
+      'jago', 'qris', 'kartu', 'transfer', 'tunai',
+    ].includes(id)
+
     setCustomPayments(prev => prev.filter(p => p.id !== id))
-  }, [])
+    if (isBuiltin) {
+      setHiddenPaymentIds(prev => prev.includes(id) ? prev : [...prev, id])
+      showToast('Metode bawaan disembunyikan.', 'success')
+      return
+    }
+    showToast('Metode dihapus.', 'success')
+  }, [showToast])
+
+  const restoreHiddenPayment = useCallback((id: string) => {
+    setHiddenPaymentIds(prev => prev.filter(item => item !== id))
+    showToast('Metode bawaan dimunculkan lagi.', 'success')
+  }, [showToast])
 
   const addCustomCategory = useCallback(
-    (label: string, keywords: string[]) => {
+    (label: string, keywords: string[], subcategories: string[] = []) => {
       const id = slugify(label)
       const kws = Array.from(new Set(keywords.map(k => k.toLowerCase().trim()).filter(Boolean)))
+      const subs = Array.from(new Set(subcategories.map(item => item.trim()).filter(Boolean)))
       setCustomCategories(prev =>
-        prev.some(c => c.id === id) ? prev : [...prev, { id, label: label.trim(), keywords: kws }]
+        prev.some(c => c.id === id) ? prev : [...prev, { id, label: label.trim(), keywords: kws, subcategories: subs }]
       )
       showToast(`Kategori "${label.trim()}" ditambahkan.`, 'success')
     },
@@ -1016,12 +1198,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   )
 
   const updateCustomCategory = useCallback(
-    (id: string, updates: { label: string; keywords: string[] }) => {
+    (id: string, updates: { label: string; keywords: string[]; subcategories?: string[] }) => {
       const label = updates.label.trim()
       if (!label) return
       const kws = Array.from(new Set(updates.keywords.map(k => k.toLowerCase().trim()).filter(Boolean)))
+      const subs = updates.subcategories?.map(item => item.trim()).filter(Boolean)
       setCustomCategories(prev =>
-        prev.map(c => (c.id === id ? { ...c, label, keywords: kws } : c))
+        prev.some(c => c.id === id)
+          ? prev.map(c => (c.id === id ? { ...c, label, keywords: kws, subcategories: subs ?? c.subcategories ?? [] } : c))
+          : [...prev, { id, label, keywords: kws, subcategories: subs ?? [] }]
       )
       showToast(`Kategori "${label}" diperbarui.`, 'success')
     },
@@ -1040,8 +1225,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [showToast])
 
   const authValue = useMemo<AuthStore>(
-    () => ({ user, authReady, signInWithGoogle, signOut, updateProfile }),
-    [user, authReady, signInWithGoogle, signOut, updateProfile]
+    () => ({ user, authReady, signInWithGoogle, signOut, updateProfile, updateProfileAvatar }),
+    [user, authReady, signInWithGoogle, signOut, updateProfile, updateProfileAvatar]
   )
 
   const transactionDataValue = useMemo<TransactionDataStore>(
@@ -1081,8 +1266,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     () => ({
       customPayments,
       customCategories,
+      hiddenPaymentIds,
       addCustomPayment,
+      updateCustomPayment,
       removeCustomPayment,
+      restoreHiddenPayment,
       addCustomCategory,
       updateCustomCategory,
       removeCustomCategory,
@@ -1091,8 +1279,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [
       customPayments,
       customCategories,
+      hiddenPaymentIds,
       addCustomPayment,
+      updateCustomPayment,
       removeCustomPayment,
+      restoreHiddenPayment,
       addCustomCategory,
       updateCustomCategory,
       removeCustomCategory,
@@ -1117,6 +1308,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       signInWithGoogle,
       signOut,
       updateProfile,
+      updateProfileAvatar,
       transactions,
       addTransaction,
       addManualTransaction,
@@ -1135,8 +1327,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setMonthlyBudget,
       customPayments,
       customCategories,
+      hiddenPaymentIds,
       addCustomPayment,
       removeCustomPayment,
+      updateCustomPayment,
+      restoreHiddenPayment,
       addCustomCategory,
       updateCustomCategory,
       removeCustomCategory,
@@ -1150,12 +1345,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       dismissToast,
     }),
     [
-      user, authReady, signInWithGoogle, signOut, updateProfile,
+      user, authReady, signInWithGoogle, signOut, updateProfile, updateProfileAvatar,
       transactions, addTransaction, addManualTransaction, updateTransaction, deleteTransaction, newTransactionId, isSubmitting,
       wallets, totalStored, addWallet, updateWallet, removeWallet, transferMoney, saveMoney,
       monthlyBudget, setMonthlyBudget,
-      customPayments, customCategories, addCustomPayment, removeCustomPayment,
-      addCustomCategory, updateCustomCategory, removeCustomCategory, parserExtras,
+      customPayments, customCategories, hiddenPaymentIds, addCustomPayment, updateCustomPayment, removeCustomPayment,
+      restoreHiddenPayment, addCustomCategory, updateCustomCategory, removeCustomCategory, parserExtras,
       zenMode, themeMode, toggleZen, setThemeMode, toast, showToast, dismissToast,
     ]
   )
@@ -1230,4 +1425,3 @@ export function usePreferenceStore(): PreferenceStore {
 export function useFeedbackStore(): FeedbackStore {
   return useRequiredContext(FeedbackContext, 'useFeedbackStore')
 }
-

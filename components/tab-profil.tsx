@@ -1,42 +1,23 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState, type ChangeEvent } from 'react'
 import {
-  Download, LogOut, Shield, Moon, Sun, Monitor, ChevronRight, Zap, Check, Save,
+  BookOpen, Camera, LogOut, Shield, Moon, Sun, Monitor, ChevronRight, RotateCcw, Zap, Check, Save,
 } from 'lucide-react'
 import Image from 'next/image'
-import { useAuthStore, usePreferenceStore, useTransactionData, type ThemeMode } from '@/lib/store'
-import type { Transaction } from '@/lib/mock-data'
+import { useAuthStore, useFeedbackStore, usePreferenceStore, useTransactionData, type ThemeMode } from '@/lib/store'
 import { monthlyTotals } from '@/lib/stats'
-import { formatIDRCompact } from '@/lib/parser'
+import { formatIDR } from '@/lib/parser'
+import { DataPortability } from '@/components/data-portability'
 import { cn } from '@/lib/utils'
 
 // ── Export transactions to JSON ───────────────────────────────────────────────
-function exportToJSON(transactions: Transaction[]) {
-  const data = transactions.map(t => ({
-    id: t.id,
-    description: t.description,
-    amount: t.amount,
-    type: t.type,
-    category: t.category,
-    paymentMethod: t.paymentMethod,
-    date: t.date.toISOString(),
-  }))
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `sakukilat-export-${new Date().toISOString().slice(0, 10)}.json`
-  a.click()
-  URL.revokeObjectURL(url)
-}
-
 // ── Stat card ─────────────────────────────────────────────────────────────────
 function StatCard({ label, value, color }: { label: string; value: string; color: string }) {
   return (
     <div className="flex-1 rounded-xl bg-[var(--sk-surface)] border border-[var(--sk-border)] p-3.5 flex flex-col gap-1">
       <p className="text-[10px] text-[var(--sk-text-dim)] uppercase tracking-widest font-medium">{label}</p>
-      <p className={cn('text-base font-bold tabular-nums', color)}>{value}</p>
+      <p className={cn('text-sm md:text-base font-bold leading-tight break-words', color)}>{value}</p>
     </div>
   )
 }
@@ -88,20 +69,16 @@ function SettingRow({
 
 // ── Main tab ──────────────────────────────────────────────────────────────────
 export function TabProfil() {
-  const { user, signOut, updateProfile } = useAuthStore()
+  const { user, signOut, updateProfile, updateProfileAvatar } = useAuthStore()
+  const { showToast } = useFeedbackStore()
   const { transactions } = useTransactionData()
   const { zenMode, themeMode, toggleZen, setThemeMode } = usePreferenceStore()
-  const [exported, setExported] = useState(false)
   const [confirmLogout, setConfirmLogout] = useState(false)
   const [profileNameDraft, setProfileNameDraft] = useState(user?.name ?? '')
+  const [avatarBusy, setAvatarBusy] = useState(false)
+  const avatarInputRef = useRef<HTMLInputElement>(null)
 
   const { income, expense, balance } = monthlyTotals(transactions)
-
-  const handleExport = () => {
-    exportToJSON(transactions)
-    setExported(true)
-    setTimeout(() => setExported(false), 2500)
-  }
 
   const handleLogout = () => {
     if (!confirmLogout) {
@@ -114,6 +91,38 @@ export function TabProfil() {
 
   const handleSaveProfile = () => {
     updateProfile(profileNameDraft)
+  }
+
+  const handleAvatarChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    if (!file.type.startsWith('image/')) {
+      showToast('Pilih file gambar untuk foto profil.', 'error')
+      return
+    }
+    if (file.size > 900_000) {
+      showToast('Pilih foto di bawah 900 KB supaya simpan lokal tetap ringan.', 'error')
+      return
+    }
+
+    const reader = new FileReader()
+    setAvatarBusy(true)
+    reader.onload = () => {
+      const result = typeof reader.result === 'string' ? reader.result : null
+      if (!result) {
+        setAvatarBusy(false)
+        showToast('Foto profil belum berhasil dibaca. Coba foto lain.', 'error')
+        return
+      }
+      updateProfileAvatar(result)
+      setAvatarBusy(false)
+    }
+    reader.onerror = () => {
+      setAvatarBusy(false)
+      showToast('Foto profil gagal diproses. Coba lagi.', 'error')
+    }
+    reader.readAsDataURL(file)
   }
 
   if (!user) return null
@@ -153,6 +162,32 @@ export function TabProfil() {
               <Shield className="w-2.5 h-2.5 text-[var(--sk-cyan)]" />
               <span className="text-[10px] text-[var(--sk-cyan)] font-medium">Login aktif</span>
             </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => avatarInputRef.current?.click()}
+                disabled={avatarBusy}
+                className="h-8 px-3 rounded-lg bg-[var(--sk-surface-2)] border border-[var(--sk-border)] text-[11px] font-semibold text-[var(--sk-text)] inline-flex items-center gap-1.5"
+              >
+                <Camera className="w-3.5 h-3.5" />
+                {avatarBusy ? 'Memproses...' : 'Ubah foto'}
+              </button>
+              <button
+                type="button"
+                onClick={() => updateProfileAvatar(null)}
+                className="h-8 px-3 rounded-lg bg-[var(--sk-surface-2)] border border-[var(--sk-border)] text-[11px] font-semibold text-[var(--sk-text-dim)] inline-flex items-center gap-1.5"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                Foto bawaan
+              </button>
+              <input
+                ref={avatarInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleAvatarChange}
+                className="hidden"
+              />
+            </div>
           </div>
         </div>
 
@@ -189,9 +224,9 @@ export function TabProfil() {
             Bulan ini
           </p>
           <div className="flex gap-2.5">
-            <StatCard label="Saldo" value={formatIDRCompact(Math.abs(balance))} color={balance >= 0 ? 'text-[var(--sk-text)]' : 'text-[var(--sk-red)]'} />
-            <StatCard label="Masuk" value={formatIDRCompact(income)} color="text-[var(--sk-green)]" />
-            <StatCard label="Keluar" value={formatIDRCompact(expense)} color="text-[var(--sk-red)]" />
+            <StatCard label="Saldo" value={formatIDR(Math.abs(balance))} color={balance >= 0 ? 'text-[var(--sk-text)]' : 'text-[var(--sk-red)]'} />
+            <StatCard label="Masuk" value={formatIDR(income)} color="text-[var(--sk-green)]" />
+            <StatCard label="Keluar" value={formatIDR(expense)} color="text-[var(--sk-red)]" />
           </div>
           <div className="mt-2 rounded-xl bg-[var(--sk-surface)] border border-[var(--sk-border)] px-3.5 py-2.5 flex items-center justify-between">
             <span className="text-xs text-[var(--sk-text-dim)]">Total transaksi dicatat</span>
@@ -200,6 +235,33 @@ export function TabProfil() {
         </div>
 
         {/* ── Settings ── */}
+        <div>
+          <p className="text-xs text-[var(--sk-text-dim)] uppercase tracking-widest font-medium mb-2.5">
+            Pakai maksimal
+          </p>
+          <div className="rounded-xl bg-[var(--sk-surface)] border border-[var(--sk-border)] p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="w-8 h-8 rounded-lg bg-[var(--sk-cyan-dim)] flex items-center justify-center">
+                <BookOpen className="w-4 h-4 text-[var(--sk-cyan)]" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-[var(--sk-text)]">Panduan penggunaan penuh</p>
+                <p className="text-[11px] text-[var(--sk-text-dim)] mt-0.5">
+                  Ini urutan paling enak supaya catatan, budget, dan rekapanmu cepat rapi.
+                </p>
+              </div>
+            </div>
+            <ol className="space-y-2 text-[12px] leading-relaxed text-[var(--sk-text-dim)]">
+              <li>1. Isi saku dan saldo awal dulu supaya semua transaksi masuk ke dompet yang benar.</li>
+              <li>2. Tentukan budget bulanan biar beranda bisa kasih peringatan harian dan mingguan.</li>
+              <li>3. Pakai Smart Tracker untuk catatan cepat, lalu pindah ke catat manual kalau butuh tanggal atau detail yang lebih presisi.</li>
+              <li>4. Rapikan kategori dan sub kategori supaya rekapan lebih enak dibaca saat transaksi makin banyak.</li>
+              <li>5. Cek Rekapan untuk lihat history, kalender harian, dan tren beberapa periode.</li>
+              <li>6. Data saat ini masih tersimpan di browser ini, jadi ekspor rutin tetap penting kalau nanti mau pindah perangkat.</li>
+            </ol>
+          </div>
+        </div>
+
         <div>
           <p className="text-xs text-[var(--sk-text-dim)] uppercase tracking-widest font-medium mb-2.5">
             Preferensi
@@ -276,17 +338,7 @@ export function TabProfil() {
               </div>
               <Check className="w-4 h-4 text-[var(--sk-green)] flex-shrink-0" />
             </div>
-            <SettingRow
-              icon={exported ? Check : Download}
-              label={exported ? 'File berhasil diunduh!' : 'Ekspor Data ke JSON'}
-              description={`${transactions.length} transaksi akan diekspor`}
-              onClick={handleExport}
-              right={
-                exported
-                  ? <Check className="w-4 h-4 text-[var(--sk-green)]" />
-                  : <ChevronRight className="w-4 h-4 text-[var(--sk-text-dim)]" />
-              }
-            />
+            <DataPortability />
           </div>
         </div>
 

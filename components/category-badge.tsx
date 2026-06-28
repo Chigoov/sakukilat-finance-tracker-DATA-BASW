@@ -83,7 +83,11 @@ function hashIndex(id: string, mod: number): number {
 export function registerCustomCategories(cats: { id: string; label: string }[]) {
   customCategoryRegistry.clear()
   for (const c of cats) {
-    if (CATEGORY_CONFIG[c.id as Category]) continue
+    const base = CATEGORY_CONFIG[c.id as Category]
+    if (base) {
+      customCategoryRegistry.set(c.id, { ...base, label: c.label })
+      continue
+    }
     const palette = CUSTOM_PALETTE[hashIndex(c.id, CUSTOM_PALETTE.length)]
     customCategoryRegistry.set(c.id, { icon: Tag, label: c.label, ...palette })
   }
@@ -97,8 +101,8 @@ export function registerCustomPayments(pms: { id: string; label: string }[]) {
 /** Resolve a category id (built-in OR custom) to its display config. */
 export function getCategoryConfig(category: string): CategoryConfig {
   return (
-    CATEGORY_CONFIG[category as Category] ??
     customCategoryRegistry.get(category) ??
+    CATEGORY_CONFIG[category as Category] ??
     CATEGORY_CONFIG.lainnya
   )
 }

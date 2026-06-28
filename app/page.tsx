@@ -167,7 +167,7 @@ function AppShell() {
       </nav>
 
       {/* ── Toast ── */}
-      <OnboardingTour userId={user.email} />
+      <OnboardingTour userId={user.email} onNavigate={switchTab} />
 
       {toast && (
         <div

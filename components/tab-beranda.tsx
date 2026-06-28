@@ -1,7 +1,7 @@
 'use client'
 
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Eye, EyeOff, TrendingUp, TrendingDown, Zap } from 'lucide-react'
+import { memo, useEffect, useMemo, useState } from 'react'
+import { Eye, EyeOff, Target, TrendingUp, TrendingDown, Zap } from 'lucide-react'
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts'
 import {
   useAuthStore,
@@ -13,8 +13,7 @@ import {
 import { TransactionList } from '@/components/transaction-list'
 import { FilterTabs, type FilterTab } from '@/components/filter-tabs'
 import { BudgetCard } from '@/components/budget-card'
-import { WalletSummary } from '@/components/wallet-summary'
-import { StreakCelebration } from '@/components/streak-celebration'
+import { readGoalSnapshot } from '@/components/goal-tracker'
 import { getCategoryHex, getCategoryConfig } from '@/components/category-badge'
 import { monthlyTotals, categoryBreakdown } from '@/lib/stats'
 import { formatIDR, formatIDRCompact } from '@/lib/parser'
@@ -41,6 +40,26 @@ function useClientHour(): number | null {
   }, [])
 
   return hour
+}
+
+interface GoalShortcutSummary {
+  label: string
+  saved: number
+  target: number
+  progress: number
+}
+
+function loadGoalShortcutSummary(): GoalShortcutSummary | null {
+  const goals = readGoalSnapshot()
+  const activeGoal = goals.find(goal => goal.saved < goal.target) ?? goals[0]
+  if (!activeGoal) return null
+  const progress = Math.max(0, Math.min(100, Math.round((activeGoal.saved / Math.max(1, activeGoal.target)) * 100)))
+  return {
+    label: activeGoal.label,
+    saved: activeGoal.saved,
+    target: activeGoal.target,
+    progress,
+  }
 }
 
 // ── Donut center label ────────────────────────────────────────────────────────
@@ -159,36 +178,14 @@ export const TabBeranda = memo(function TabBeranda() {
   const { newTransactionId } = useTransactionStatus()
   const { zenMode, toggleZen } = usePreferenceStore()
 
-  // ── Long-press balance to toggle Zen Mode ─────────────────────────────────
-  // Per the UX critique: Zen should be a gesture on the balance itself,
-  // not a settings tap. Hold ~500ms on the saldo card to flip Zen.
-  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const longPressFiredRef = useRef(false)
-  const clearLongPress = useCallback(() => {
-    if (longPressTimerRef.current) {
-      clearTimeout(longPressTimerRef.current)
-      longPressTimerRef.current = null
-    }
-  }, [])
-  const handleBalancePressStart = useCallback(() => {
-    clearLongPress()
-    longPressFiredRef.current = false
-    longPressTimerRef.current = setTimeout(() => {
-      longPressFiredRef.current = true
-      toggleZen()
-      if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
-        navigator.vibrate([12, 40, 12])
-      }
-    }, 500)
-  }, [clearLongPress, toggleZen])
-  const handleBalancePressEnd = useCallback(() => {
-    clearLongPress()
-  }, [clearLongPress])
-  useEffect(() => () => clearLongPress(), [clearLongPress])
-
   const [activeFilter, setActiveFilter] = useState<FilterTab>('semua')
+  const [goalShortcut, setGoalShortcut] = useState<GoalShortcutSummary | null>(null)
   const hour = useClientHour()
   const { period, fullDate, monthProgress } = useClientDateInfo()
+
+  useEffect(() => {
+    setGoalShortcut(loadGoalShortcutSummary())
+  }, [])
 
   const { income, expense, balance } = useMemo(
     () => monthlyTotals(transactions),
@@ -205,21 +202,24 @@ export const TabBeranda = memo(function TabBeranda() {
     [slices]
   )
 
-  const recentTransactions = useMemo(() =>
-    [...transactions].sort((a, b) => b.date.getTime() - a.date.getTime()).slice(0, 7),
-  [transactions])
+  const todayTransactions = useMemo(() => {
+    const today = localDayKey(new Date())
+    return transactions
+      .filter(t => localDayKey(t.date) === today)
+      .sort((a, b) => b.date.getTime() - a.date.getTime())
+  }, [transactions])
 
   const filteredTransactions = useMemo(() => {
-    if (activeFilter === 'semua') return recentTransactions
-    if (activeFilter === 'pengeluaran') return recentTransactions.filter(t => t.type === 'expense')
-    return recentTransactions.filter(t => t.type === 'income')
-  }, [recentTransactions, activeFilter])
+    if (activeFilter === 'semua') return todayTransactions
+    if (activeFilter === 'pengeluaran') return todayTransactions.filter(t => t.type === 'expense')
+    return todayTransactions.filter(t => t.type === 'income')
+  }, [todayTransactions, activeFilter])
 
   const filterCounts = useMemo(() => ({
-    semua: recentTransactions.length,
-    pengeluaran: recentTransactions.filter(t => t.type === 'expense').length,
-    pemasukan: recentTransactions.filter(t => t.type === 'income').length,
-  }), [recentTransactions])
+    semua: todayTransactions.length,
+    pengeluaran: todayTransactions.filter(t => t.type === 'expense').length,
+    pemasukan: todayTransactions.filter(t => t.type === 'income').length,
+  }), [todayTransactions])
 
   const insightBar = useMemo(() => {
     const today = dayStart(new Date())
@@ -342,18 +342,7 @@ export const TabBeranda = memo(function TabBeranda() {
 
       {/* ── Balance + Donut card ── */}
       <section className="px-4 md:px-8 pb-4">
-        <div
-          className="rounded-2xl bg-[var(--sk-surface)] border border-[var(--sk-border)] p-5 overflow-hidden relative select-none touch-manipulation"
-          onPointerDown={handleBalancePressStart}
-          onPointerUp={handleBalancePressEnd}
-          onPointerLeave={handleBalancePressEnd}
-          onPointerCancel={handleBalancePressEnd}
-          onContextMenu={e => e.preventDefault()}
-          role="button"
-          tabIndex={0}
-          aria-label="Tahan untuk toggle Zen Mode"
-          title="Tahan ~0.5 detik untuk sembunyikan / tampilkan angka"
-        >
+        <div className="rounded-2xl bg-[var(--sk-surface)] border border-[var(--sk-border)] p-5 overflow-hidden relative">
           {/* ambient glow */}
           <div
             aria-hidden
@@ -424,10 +413,6 @@ export const TabBeranda = memo(function TabBeranda() {
                 </div>
               ) : (
                 <div className="w-full">
-                  <div className="mb-1 text-center">
-                    <p className="text-[10px] uppercase tracking-widest text-[var(--sk-text-dim)]">Alokasi keluar</p>
-                    <p className="text-[10px] text-[var(--sk-text-dim)]">Arahkan ke potongan chart</p>
-                  </div>
                   <div className="w-36 h-36 md:w-40 md:h-40 mx-auto">
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
@@ -493,12 +478,48 @@ export const TabBeranda = memo(function TabBeranda() {
       </section>
 
       {/* ── Filter + Transactions ── */}
-      <div className="md:grid md:grid-cols-2">
-        <WalletSummary />
-        <BudgetCard />
-      </div>
+      <BudgetCard />
+
+      {goalShortcut && (
+        <section className="px-4 md:px-0">
+          <div className="rounded-2xl bg-[var(--sk-surface)] border border-[var(--sk-border)] px-3.5 py-3">
+            <div className="flex items-start gap-2">
+              <div className="w-8 h-8 rounded-xl bg-[var(--sk-cyan-dim)] flex items-center justify-center flex-shrink-0">
+                <Target className="w-4 h-4 text-[var(--sk-cyan)]" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <p className="text-xs font-semibold text-[var(--sk-text)] truncate">
+                    Goal tabungan aktif
+                  </p>
+                  <span className="ml-auto rounded-full bg-[var(--sk-surface-2)] px-2 py-0.5 text-[10px] font-semibold text-[var(--sk-cyan)]">
+                    {goalShortcut.progress}%
+                  </span>
+                </div>
+                <p className="mt-0.5 text-sm font-semibold text-[var(--sk-text)] truncate">
+                  {goalShortcut.label}
+                </p>
+                <p className="mt-1 text-[11px] text-[var(--sk-text-dim)] tabular-nums">
+                  {formatIDR(goalShortcut.saved)} / {formatIDR(goalShortcut.target)}
+                </p>
+                <div className="mt-2 h-2 rounded-full bg-[var(--sk-surface-2)] overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-[var(--sk-cyan)] transition-all"
+                    style={{ width: `${goalShortcut.progress}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
 
       <section className="flex-1 md:px-8">
+        <div className="px-4 md:px-0 pt-1">
+          <p className="text-xs text-[var(--sk-text-dim)] uppercase tracking-widest font-medium">
+            History hari ini
+          </p>
+        </div>
         <div className="sticky top-0 z-20 bg-[var(--sk-bg)] backdrop-blur-xl px-4 md:px-0 py-3 border-b border-[var(--sk-border)]">
           <FilterTabs active={activeFilter} onChange={setActiveFilter} counts={filterCounts} />
         </div>
@@ -511,9 +532,6 @@ export const TabBeranda = memo(function TabBeranda() {
           />
         </div>
       </section>
-
-      {/* Milestone celebration overlay — fires once per day at 7/14/30/60/100/200/365 */}
-      <StreakCelebration streak={insightBar.streak} />
 
     </div>
   )

@@ -4,7 +4,9 @@ import { memo, useCallback, useEffect, useMemo, useState } from 'react'
 import { ArrowLeft, ArrowRight, BarChart2, Check, PenLine, Repeat, Sparkles, Wallet } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-const ONBOARDING_VERSION = 2
+type TourTab = 'beranda' | 'saku' | 'rekapan' | 'profil'
+
+const ONBOARDING_VERSION = 6
 const ONBOARDING_KEY_PREFIX = `sakukilat:v2:onboarding-completed-v${ONBOARDING_VERSION}`
 
 interface Slide {
@@ -13,7 +15,9 @@ interface Slide {
   iconBg: string
   title: string
   body: string
-  example?: string
+  action: string
+  tab: TourTab
+  target: string
 }
 
 const SLIDES: Slide[] = [
@@ -21,33 +25,51 @@ const SLIDES: Slide[] = [
     icon: Sparkles,
     iconColor: 'text-[var(--sk-cyan)]',
     iconBg: 'bg-[var(--sk-cyan-dim)]',
-    title: 'Catatan otomatis ada di bawah',
-    body: 'Ketik transaksi pakai bahasa sehari-hari. SakuKilat membaca nominal, kategori, dan metode bayar otomatis dari kalimatmu.',
-    example: 'kopi 18k gopay',
+    title: 'Catat otomatis',
+    body: 'Area bawah ini membaca kalimat seperti "kopi 18k gopay" dan langsung menebak nominal, kategori, serta saku.',
+    action: 'Coba nanti ketik transaksi singkat di kolom yang disorot.',
+    tab: 'beranda',
+    target: 'smart-input',
   },
   {
     icon: PenLine,
     iconColor: 'text-[var(--sk-amber)]',
     iconBg: 'bg-[var(--sk-amber-dim)]',
-    title: 'Catat manual untuk detail rapi',
-    body: 'Pakai tombol manual saat kamu ingin memilih tipe, dompet, kategori, tanggal, dan deskripsi sendiri.',
-    example: 'Pilih Keluar, Masuk, atau Pindah',
+    title: 'Catat manual',
+    body: 'Tombol ini membuka form lengkap untuk memilih tipe, dompet, kategori, tanggal, dan deskripsi sendiri.',
+    action: 'Pakai ini untuk transaksi hari kemarin, besok, atau catatan yang butuh detail.',
+    tab: 'beranda',
+    target: 'manual-entry',
   },
   {
     icon: Wallet,
     iconColor: 'text-[var(--sk-green)]',
     iconBg: 'bg-[var(--sk-green-dim)]',
-    title: 'Saku adalah pusat pengaturan',
-    body: 'Di Saku kamu mengatur dompet, budget, pindah uang, metode bayar, kategori, tabungan, dan transaksi otomatis.',
-    example: 'Gaji, langganan, cicilan -> otomatis',
+    title: 'Saku uang',
+    body: 'Di sini kamu melihat total uang tersimpan, beberapa saku utama, dan tombol untuk membuka semua saku.',
+    action: 'Buka semua saku kalau ingin cek saldo dompet satu per satu.',
+    tab: 'saku',
+    target: 'wallets',
   },
   {
     icon: BarChart2,
     iconColor: 'text-[var(--sk-cyan)]',
     iconBg: 'bg-[var(--sk-cyan-dim)]',
-    title: 'Rekapan bisa pakai periode sendiri',
-    body: 'Buka Rekapan lalu pilih Tren untuk melihat history 7 hari, 30 hari, 1 tahun, atau periode tanggal yang kamu tentukan.',
-    example: 'History: 1 Jun 2026 - 28 Jun 2026',
+    title: 'Rekapan',
+    body: 'Tiga tombol ini memisahkan kalender harian, history transaksi, dan tren periode.',
+    action: 'Pilih History untuk melihat 7 hari, 30 hari, 1 tahun, atau periode sendiri.',
+    tab: 'rekapan',
+    target: 'rekapan-tabs',
+  },
+  {
+    icon: Repeat,
+    iconColor: 'text-[var(--sk-green)]',
+    iconBg: 'bg-[var(--sk-green-dim)]',
+    title: 'Pindah data',
+    body: 'Bagian ini untuk backup JSON, ekspor CSV, dan impor data dari SakuKilat atau aplikasi lain.',
+    action: 'Backup JSON paling aman untuk memindahkan semua data lokal.',
+    tab: 'profil',
+    target: 'data-portability',
   },
 ]
 
@@ -73,10 +95,17 @@ function writeCompleted(userId?: string | null): void {
   }
 }
 
-export const OnboardingTour = memo(function OnboardingTour({ userId }: { userId?: string | null }) {
+export const OnboardingTour = memo(function OnboardingTour({
+  userId,
+  onNavigate,
+}: {
+  userId?: string | null
+  onNavigate?: (tab: TourTab) => void
+}) {
   const [resolved, setResolved] = useState<boolean | null>(null)
   const [index, setIndex] = useState(0)
   const [closing, setClosing] = useState(false)
+  const [highlight, setHighlight] = useState<{ top: number; left: number; width: number; height: number } | null>(null)
 
   useEffect(() => {
     setResolved(readCompleted(userId))
@@ -87,6 +116,39 @@ export const OnboardingTour = memo(function OnboardingTour({ userId }: { userId?
   const isFirst = index === 0
   const isLast = index === total - 1
   const Icon = useMemo(() => slide.icon, [slide.icon])
+
+  const updateHighlight = useCallback(() => {
+    const target = document.querySelector<HTMLElement>(`[data-tour="${slide.target}"]`)
+    if (!target) {
+      setHighlight(null)
+      return
+    }
+
+    target.scrollIntoView({ block: 'center', inline: 'center', behavior: 'smooth' })
+    window.requestAnimationFrame(() => {
+      const rect = target.getBoundingClientRect()
+      const pad = 8
+      setHighlight({
+        top: Math.max(8, rect.top - pad),
+        left: Math.max(8, rect.left - pad),
+        width: Math.min(window.innerWidth - 16, rect.width + pad * 2),
+        height: Math.min(window.innerHeight - 16, rect.height + pad * 2),
+      })
+    })
+  }, [slide.target])
+
+  useEffect(() => {
+    if (resolved !== false) return
+    onNavigate?.(slide.tab)
+    const timers = [180, 520, 900].map(delay => window.setTimeout(updateHighlight, delay))
+    window.addEventListener('resize', updateHighlight)
+    window.addEventListener('scroll', updateHighlight, true)
+    return () => {
+      timers.forEach(timer => window.clearTimeout(timer))
+      window.removeEventListener('resize', updateHighlight)
+      window.removeEventListener('scroll', updateHighlight, true)
+    }
+  }, [onNavigate, resolved, slide.tab, updateHighlight])
 
   const finish = useCallback(() => {
     writeCompleted(userId)
@@ -125,45 +187,60 @@ export const OnboardingTour = memo(function OnboardingTour({ userId }: { userId?
 
   if (resolved !== false) return null
 
+  const panelTop = highlight ? highlight.top > window.innerHeight * 0.45 : false
+
   return (
     <div
       role="dialog"
       aria-modal="true"
       aria-labelledby="sk-onboarding-title"
-      className={cn(
-        'fixed inset-0 z-[100] flex items-center justify-center px-4 py-6',
-        'bg-[rgba(9,13,22,0.82)] backdrop-blur-md transition-opacity duration-200',
-        closing ? 'opacity-0' : 'opacity-100'
-      )}
+      className={cn('fixed inset-0 z-[100] transition-opacity duration-200', closing ? 'opacity-0' : 'opacity-100')}
     >
+      {!highlight && <div className="absolute inset-0 bg-[rgba(9,13,22,0.82)]" />}
+
+      {highlight && (
+        <div
+          aria-hidden
+          className="fixed rounded-2xl border-2 border-[var(--sk-cyan)] shadow-[0_0_0_9999px_rgba(9,13,22,0.78),0_0_28px_var(--sk-cyan-glow)] animate-pulse-soft transition-all duration-300"
+          style={{
+            top: highlight.top,
+            left: highlight.left,
+            width: highlight.width,
+            height: highlight.height,
+          }}
+        />
+      )}
+
       <div
         className={cn(
-          'w-full max-w-sm rounded-2xl bg-[var(--sk-surface)] border border-[var(--sk-border-2)] p-5 shadow-2xl',
+          'fixed left-4 right-4 mx-auto max-w-sm rounded-2xl bg-[var(--sk-surface)] border border-[var(--sk-border-2)] p-4 shadow-2xl',
           'transition-transform duration-200',
+          panelTop ? 'top-4' : 'bottom-4',
           closing ? 'scale-95' : 'scale-100'
         )}
       >
-        <div className={cn('w-12 h-12 rounded-xl flex items-center justify-center mb-4', slide.iconBg)}>
-          <Icon className={cn('w-6 h-6', slide.iconColor)} />
+        <div className="flex items-start gap-3">
+          <div className={cn('w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0', slide.iconBg)}>
+            <Icon className={cn('w-5 h-5', slide.iconColor)} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-[10px] font-semibold text-[var(--sk-text-dim)] uppercase tracking-widest mb-1">
+              Panduan {index + 1}/{total}
+            </p>
+            <h2 id="sk-onboarding-title" className="text-lg font-bold text-[var(--sk-text)] leading-tight">
+              {slide.title}
+            </h2>
+            <p className="text-sm text-[var(--sk-text-muted)] leading-relaxed mt-1">
+              {slide.body}
+            </p>
+          </div>
         </div>
 
-        <p className="text-[10px] font-semibold text-[var(--sk-text-dim)] uppercase tracking-widest mb-1">
-          Panduan {index + 1}/{total}
-        </p>
-        <h2 id="sk-onboarding-title" className="text-xl font-bold text-[var(--sk-text)] leading-tight mb-2">
-          {slide.title}
-        </h2>
-        <p className="text-sm text-[var(--sk-text-muted)] leading-relaxed mb-4">
-          {slide.body}
-        </p>
+        <div className="mt-3 rounded-xl bg-[var(--sk-surface-2)] border border-[var(--sk-border)] px-3 py-2 text-xs text-[var(--sk-cyan)] leading-relaxed">
+          {slide.action}
+        </div>
 
-        {slide.example && (
-          <div className="rounded-xl bg-[var(--sk-surface-2)] border border-[var(--sk-border)] px-3 py-2.5 mb-5 font-mono text-xs text-[var(--sk-cyan)]">
-            {slide.example}
-          </div>
-        )}
-
-        <div className="flex items-center justify-center gap-1.5 mb-5" aria-hidden>
+        <div className="flex items-center justify-center gap-1.5 my-4" aria-hidden>
           {SLIDES.map((_, slideIndex) => (
             <span
               key={slideIndex}
@@ -208,12 +285,6 @@ export const OnboardingTour = memo(function OnboardingTour({ userId }: { userId?
             )}
           </button>
         </div>
-
-        {isLast && (
-          <p className="mt-4 text-center text-[10px] text-[var(--sk-text-dim)] leading-relaxed">
-            Setelah selesai, panduan ini tidak muncul lagi untuk akun ini.
-          </p>
-        )}
       </div>
     </div>
   )

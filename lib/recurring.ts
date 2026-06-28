@@ -12,6 +12,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { firebaseAuth, loadUserCloudSlice, saveUserCloudSlice } from '@/lib/firebase'
 
 export type RecurringCadence = 'daily' | 'weekly' | 'monthly'
 
@@ -32,6 +33,7 @@ export interface RecurringTemplate {
 
 const STORAGE_KEY = 'sakukilat:v2:recurring'
 const MS_DAY = 24 * 60 * 60 * 1000
+const CLOUD_KEY = 'recurring'
 
 // ── Storage helpers ──────────────────────────────────────────────────────────
 function loadFromStorage(): RecurringTemplate[] {
@@ -60,6 +62,20 @@ function saveToStorage(templates: RecurringTemplate[]): void {
   } catch {
     /* quota / private mode — silently ignore */
   }
+}
+
+function isRecurringTemplate(value: unknown): value is RecurringTemplate {
+  return Boolean(
+    value &&
+    typeof value === 'object' &&
+    typeof (value as RecurringTemplate).id === 'string' &&
+    typeof (value as RecurringTemplate).input === 'string' &&
+    typeof (value as RecurringTemplate).label === 'string' &&
+    typeof (value as RecurringTemplate).nextDueAt === 'number' &&
+    ((value as RecurringTemplate).cadence === 'daily' ||
+      (value as RecurringTemplate).cadence === 'weekly' ||
+      (value as RecurringTemplate).cadence === 'monthly')
+  )
 }
 
 // ── Cadence math ────────────────────────────────────────────────────────────
@@ -114,13 +130,45 @@ export function useRecurringTransactions(
 ): UseRecurringResult {
   const [templates, setTemplates] = useState<RecurringTemplate[]>([])
   const [hydrated, setHydrated] = useState(false)
+  const [cloudReady, setCloudReady] = useState(false)
   /** Prevent firing storm during dev double-effect / strict mode. */
   const firingRef = useRef(false)
+  const cloudSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // hydrate from localStorage on mount
   useEffect(() => {
+    let active = true
     setTemplates(loadFromStorage())
-    setHydrated(true)
+
+    void (async () => {
+      const uid = firebaseAuth.currentUser?.uid
+      if (!uid) {
+        if (active) {
+          setHydrated(true)
+          setCloudReady(false)
+        }
+        return
+      }
+
+      try {
+        const remoteTemplates = await loadUserCloudSlice<RecurringTemplate[]>(uid, CLOUD_KEY)
+        if (active && Array.isArray(remoteTemplates)) {
+          setTemplates(remoteTemplates.filter(isRecurringTemplate))
+        }
+      } catch (error) {
+        console.error('Recurring cloud restore failed:', error)
+      } finally {
+        if (active) {
+          setHydrated(true)
+          setCloudReady(true)
+        }
+      }
+    })()
+
+    return () => {
+      active = false
+      if (cloudSaveTimerRef.current) clearTimeout(cloudSaveTimerRef.current)
+    }
   }, [])
 
   // persist whenever templates change post-hydration
@@ -128,6 +176,23 @@ export function useRecurringTransactions(
     if (!hydrated) return
     saveToStorage(templates)
   }, [templates, hydrated])
+
+  useEffect(() => {
+    const uid = firebaseAuth.currentUser?.uid
+    if (!hydrated || !cloudReady || !uid) return
+
+    if (cloudSaveTimerRef.current) clearTimeout(cloudSaveTimerRef.current)
+    cloudSaveTimerRef.current = setTimeout(() => {
+      void saveUserCloudSlice(uid, CLOUD_KEY, templates).catch(error => {
+        console.error('Recurring cloud save failed:', error)
+      })
+      cloudSaveTimerRef.current = null
+    }, 700)
+
+    return () => {
+      if (cloudSaveTimerRef.current) clearTimeout(cloudSaveTimerRef.current)
+    }
+  }, [templates, hydrated, cloudReady])
 
   // run any due recurring entries on mount (and when templates change after hydrate)
   useEffect(() => {

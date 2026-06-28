@@ -50,6 +50,7 @@ export interface ParsedTransaction {
   amount: number
   type: TransactionType
   category: string // built-in Category id OR a custom category id
+  subcategory?: string
   paymentMethod: string // built-in PaymentMethod id OR a custom payment id
   date?: Date
   rawInput: string
@@ -94,6 +95,7 @@ export interface CustomCategory {
   id: string
   label: string
   keywords: string[]
+  subcategories?: string[]
 }
 export interface ParserExtras {
   payments?: CustomPayment[]
@@ -845,7 +847,7 @@ function detectCategory(text: string, type: TransactionType, extras?: ParserExtr
   // Custom user-defined categories take priority (their personal slang)
   if (extras?.categories) {
     for (const c of extras.categories) {
-      for (const kw of c.keywords) {
+      for (const kw of [c.id, c.label, ...c.keywords, ...(c.subcategories ?? [])]) {
         if (kw && wordMatch(lower, kw)) return c.id
       }
     }
@@ -868,6 +870,12 @@ function detectCategory(text: string, type: TransactionType, extras?: ParserExtr
   }
 
   return 'lainnya'
+}
+
+function detectSubcategory(text: string, category: string, extras?: ParserExtras): string | undefined {
+  const lower = text.toLowerCase()
+  const configured = extras?.categories?.find(item => item.id === category)
+  return configured?.subcategories?.find(item => item && wordMatch(lower, item))
 }
 
 // ── Detect transaction type ──────────────────────────────────────────────────
@@ -966,6 +974,7 @@ export function parseTransaction(input: string, extras?: ParserExtras): ParsedTr
     paymentMethod = extras?.lastActiveWalletId ?? 'tunai'
   }
   const category = detectCategory(`${description} ${trimmed}`, type, extras)
+  const subcategory = detectSubcategory(`${description} ${trimmed}`, category, extras)
 
   // ── Step 5: Confidence score ─────────────────────────────────────────────
   // Deduct for missing signals; add for explicit payment method detection
@@ -993,6 +1002,7 @@ export function parseTransaction(input: string, extras?: ParserExtras): ParsedTr
     amount,
     type,
     category,
+    subcategory,
     paymentMethod,
     date: dateHint?.date,
     rawInput: trimmed,

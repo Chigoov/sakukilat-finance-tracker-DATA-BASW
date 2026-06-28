@@ -29,6 +29,7 @@ export function TransactionItem({ transaction, onDelete, onUpdate, isNew }: Tran
   const MoveIcon = kind === 'saving' ? PiggyBank : ArrowRightLeft
   const routeLabel = `${getPaymentLabel(transaction.fromWalletId ?? transaction.paymentMethod)} -> ${getPaymentLabel(transaction.toWalletId ?? '')}`
   const typeLabel = isMove ? (kind === 'saving' ? 'Simpan' : 'Pindah') : isExpense ? 'Pengeluaran' : 'Pemasukan'
+  const categoryLabel = transaction.subcategory ? `${config.label} / ${transaction.subcategory}` : config.label
   const signedAmount = `${isMove ? '' : isExpense ? '-' : '+'}${formatIDR(transaction.amount)}`
 
   const handleDelete = (e: React.MouseEvent) => {
@@ -104,7 +105,7 @@ export function TransactionItem({ transaction, onDelete, onUpdate, isNew }: Tran
           </div>
           <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 mt-0.5">
             <span className="text-xs text-[var(--sk-text-muted)] shrink-0">
-              {isMove ? typeLabel : config.label}
+              {isMove ? typeLabel : categoryLabel}
             </span>
             <span className="text-[var(--sk-text-dim)] text-xs shrink-0">.</span>
             <span className="text-xs text-[var(--sk-text-muted)] min-w-0 break-words">
@@ -163,6 +164,14 @@ export function TransactionItem({ transaction, onDelete, onUpdate, isNew }: Tran
                   {isMove ? routeLabel : getPaymentLabel(transaction.paymentMethod)}
                 </span>
               </div>
+              {!isMove && transaction.subcategory && (
+                <div>
+                  <span className="text-[var(--sk-text-dim)] block mb-0.5">Sub kategori</span>
+                  <span className="font-medium text-[var(--sk-text)]">
+                    {transaction.subcategory}
+                  </span>
+                </div>
+              )}
               <div>
                 <span className="text-[var(--sk-text-dim)] block mb-0.5">Status</span>
                 <span className="font-medium text-[var(--sk-text-muted)]">

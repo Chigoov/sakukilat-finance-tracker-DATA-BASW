@@ -6,6 +6,7 @@ import { useFeedbackStore, useWalletStore } from '@/lib/store'
 import { formatIDR, formatIDRCompact } from '@/lib/parser'
 import { parseAmountInput } from '@/lib/amount'
 import { cn } from '@/lib/utils'
+import { firebaseAuth, loadUserCloudSlice, saveUserCloudSlice } from '@/lib/firebase'
 
 /**
  * SakuKilat Goal Tracker
@@ -26,22 +27,38 @@ interface Goal {
   createdAt: string
 }
 
-const STORAGE_KEY = 'sakukilat:v2:goals'
+export const GOAL_STORAGE_KEY = 'sakukilat:v2:goals'
 const CELEBRATED_KEY = 'sakukilat:v2:celebrated-goals'
+const CLOUD_KEY = 'goals'
+
+function isGoal(value: unknown): value is Goal {
+  return Boolean(
+    value &&
+    typeof value === 'object' &&
+    typeof (value as Goal).id === 'string' &&
+    typeof (value as Goal).label === 'string' &&
+    typeof (value as Goal).target === 'number' &&
+    typeof (value as Goal).saved === 'number'
+  )
+}
 
 function loadGoals(): Goal[] {
   if (typeof window === 'undefined') return []
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY)
+    const raw = window.localStorage.getItem(GOAL_STORAGE_KEY)
     if (!raw) return []
     const parsed = JSON.parse(raw) as Goal[]
-    return Array.isArray(parsed) ? parsed.filter(g => g && g.id && typeof g.target === 'number') : []
+    return Array.isArray(parsed) ? parsed.filter(isGoal) : []
   } catch { return [] }
+}
+
+export function readGoalSnapshot(): Goal[] {
+  return loadGoals()
 }
 
 function saveGoals(goals: Goal[]) {
   if (typeof window === 'undefined') return
-  try { window.localStorage.setItem(STORAGE_KEY, JSON.stringify(goals)) } catch { /* quota */ }
+  try { window.localStorage.setItem(GOAL_STORAGE_KEY, JSON.stringify(goals)) } catch { /* quota */ }
 }
 
 function loadCelebrated(): Set<string> {
@@ -384,18 +401,51 @@ function GoalForm({ initial, onCancel, onSave }: GoalFormProps) {
 export const GoalTracker = memo(function GoalTracker() {
   const [goals, setGoals] = useState<Goal[]>([])
   const [hydrated, setHydrated] = useState(false)
+  const [cloudReady, setCloudReady] = useState(false)
   const [editing, setEditing] = useState<Goal | null>(null)
   const [showForm, setShowForm] = useState(false)
   const [celebratingId, setCelebratingId] = useState<string | null>(null)
   const celebratedRef = useRef<Set<string>>(new Set())
+  const cloudSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const { transferMoney } = useWalletStore()
   const { showToast } = useFeedbackStore()
 
   // hydrate post-mount to avoid SSR mismatch
   useEffect(() => {
-    setGoals(loadGoals())
+    let active = true
+    const localGoals = loadGoals()
+    setGoals(localGoals)
     celebratedRef.current = loadCelebrated()
-    setHydrated(true)
+
+    void (async () => {
+      const uid = firebaseAuth.currentUser?.uid
+      if (!uid) {
+        if (active) {
+          setHydrated(true)
+          setCloudReady(false)
+        }
+        return
+      }
+
+      try {
+        const remoteGoals = await loadUserCloudSlice<Goal[]>(uid, CLOUD_KEY)
+        if (active && Array.isArray(remoteGoals)) {
+          setGoals(remoteGoals.filter(isGoal))
+        }
+      } catch (error) {
+        console.error('Goal cloud restore failed:', error)
+      } finally {
+        if (active) {
+          setHydrated(true)
+          setCloudReady(true)
+        }
+      }
+    })()
+
+    return () => {
+      active = false
+      if (cloudSaveTimerRef.current) clearTimeout(cloudSaveTimerRef.current)
+    }
   }, [])
 
   // persist whenever goals change
@@ -403,6 +453,23 @@ export const GoalTracker = memo(function GoalTracker() {
     if (!hydrated) return
     saveGoals(goals)
   }, [goals, hydrated])
+
+  useEffect(() => {
+    const uid = firebaseAuth.currentUser?.uid
+    if (!hydrated || !cloudReady || !uid) return
+
+    if (cloudSaveTimerRef.current) clearTimeout(cloudSaveTimerRef.current)
+    cloudSaveTimerRef.current = setTimeout(() => {
+      void saveUserCloudSlice(uid, CLOUD_KEY, goals).catch(error => {
+        console.error('Goal cloud save failed:', error)
+      })
+      cloudSaveTimerRef.current = null
+    }, 700)
+
+    return () => {
+      if (cloudSaveTimerRef.current) clearTimeout(cloudSaveTimerRef.current)
+    }
+  }, [goals, hydrated, cloudReady])
 
   const upsertGoal = useCallback((data: Omit<Goal, 'id' | 'createdAt' | 'saved'> & { id?: string }) => {
     setGoals(prev => {

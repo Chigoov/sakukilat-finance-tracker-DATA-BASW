@@ -3,7 +3,7 @@
 import { Gauge } from 'lucide-react'
 import { useBudgetStore, useTransactionData } from '@/lib/store'
 import { monthlyBudgetStatus } from '@/lib/stats'
-import { formatIDRCompact } from '@/lib/parser'
+import { formatIDR, formatIDRCompact } from '@/lib/parser'
 import { cn } from '@/lib/utils'
 
 export function BudgetCard() {
@@ -111,6 +111,24 @@ export function BudgetCard() {
         {!status.roast && status.weekOverBase && (
           <p className="mt-3 text-xs leading-relaxed text-[var(--sk-amber)]">
             Minggu ini sudah lewat jatah. Tenang, remnya cukup di minggu ini dulu.
+          </p>
+        )}
+
+        {status.budget === 0 ? (
+          <p className="mt-3 text-xs leading-relaxed text-[var(--sk-text-dim)]">
+            Budget bulan ini belum diisi. Isi dulu supaya SakuKilat bisa ngasih batas harian dan alarm saat pengeluaran mulai kebablasan.
+          </p>
+        ) : status.todayOverBase ? (
+          <p className="mt-3 text-xs leading-relaxed text-[var(--sk-red)]">
+            Hari ini kamu sudah keluar {formatIDR(status.todayExpense)}. Itu lewat {formatIDR(Math.max(0, status.todayExpense - status.baseDailyBudget))} dari jatah harian {formatIDR(status.baseDailyBudget)}.
+          </p>
+        ) : status.todayExpense > 0 ? (
+          <p className="mt-3 text-xs leading-relaxed text-[var(--sk-text-dim)]">
+            Hari ini baru keluar {formatIDR(status.todayExpense)}. Batas amannya sekitar {formatIDR(Math.round(status.dynamicDailyBudget))} per hari sampai minggu ini selesai.
+          </p>
+        ) : (
+          <p className="mt-3 text-xs leading-relaxed text-[var(--sk-text-dim)]">
+            Belum ada pengeluaran hari ini. Cocok kalau mau mulai catat dari Smart Tracker atau input manual.
           </p>
         )}
       </div>

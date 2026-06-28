@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { ChevronDown, ChevronUp, Info, Plus, Tag, Wallet, X } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { Check, ChevronDown, ChevronUp, Info, Pencil, Plus, Tag, Wallet, X } from 'lucide-react'
 import { CATEGORY_CONFIG } from '@/components/category-badge'
 import { useCustomizationStore } from '@/lib/store'
 import type { CustomCategory, CustomPayment } from '@/lib/parser'
@@ -84,8 +84,62 @@ function AddForm({ placeholder, keywordsLabel, onAdd }: AddFormProps) {
   )
 }
 
-function CustomChip({ item, onRemove }: { item: CustomPayment | CustomCategory; onRemove: () => void }) {
+function CustomChip({
+  item,
+  onRemove,
+  onUpdate,
+}: {
+  item: CustomPayment | CustomCategory
+  onRemove: () => void
+  onUpdate?: (label: string, keywords: string[]) => void
+}) {
   const [showKeywords, setShowKeywords] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [label, setLabel] = useState(item.label)
+  const [keywords, setKeywords] = useState(item.keywords.join(', '))
+
+  const saveEdit = () => {
+    if (!label.trim()) return
+    onUpdate?.(label.trim(), keywords.split(',').map(k => k.trim().toLowerCase()).filter(Boolean))
+    setEditing(false)
+  }
+
+  if (editing) {
+    return (
+      <div className="rounded-xl bg-[var(--sk-surface)] border border-[var(--sk-cyan)] p-3 flex flex-col gap-2">
+        <input
+          value={label}
+          onChange={e => setLabel(e.target.value)}
+          className="bg-[var(--sk-surface-2)] rounded-lg px-3 py-2 text-xs text-[var(--sk-text)] outline-none border border-[var(--sk-border)]"
+          placeholder="Nama metode"
+        />
+        <input
+          value={keywords}
+          onChange={e => setKeywords(e.target.value)}
+          className="bg-[var(--sk-surface-2)] rounded-lg px-3 py-2 text-xs text-[var(--sk-text)] outline-none border border-[var(--sk-border)]"
+          placeholder="Keyword, pisahkan koma"
+        />
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={saveEdit}
+            className="rounded-lg bg-[var(--sk-cyan)] text-[#090D16] text-xs font-semibold py-2 flex items-center justify-center gap-1.5"
+          >
+            <Check className="w-3.5 h-3.5" />
+            Simpan
+          </button>
+          <button
+            type="button"
+            onClick={() => setEditing(false)}
+            className="rounded-lg bg-[var(--sk-surface-2)] text-[var(--sk-text-muted)] text-xs font-semibold py-2 flex items-center justify-center gap-1.5"
+          >
+            <X className="w-3.5 h-3.5" />
+            Batal
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="rounded-xl bg-[var(--sk-surface)] border border-[var(--sk-border)] overflow-hidden">
@@ -98,6 +152,15 @@ function CustomChip({ item, onRemove }: { item: CustomPayment | CustomCategory; 
         >
           <Info className="w-3.5 h-3.5" />
         </button>
+        {onUpdate && (
+          <button
+            onClick={() => setEditing(true)}
+            aria-label={`Edit ${item.label}`}
+            className="w-6 h-6 rounded-lg bg-[var(--sk-surface-2)] flex items-center justify-center text-[var(--sk-text-dim)] hover:text-[var(--sk-cyan)] transition-colors"
+          >
+            <Pencil className="w-3 h-3" />
+          </button>
+        )}
         <button
           onClick={onRemove}
           aria-label={`Hapus ${item.label}`}
@@ -159,8 +222,11 @@ export function PersonalizationSettings({ showCategories = true }: { showCategor
   const {
     customPayments,
     customCategories,
+    hiddenPaymentIds,
     addCustomPayment,
+    updateCustomPayment,
     removeCustomPayment,
+    restoreHiddenPayment,
     addCustomCategory,
     removeCustomCategory,
   } = useCustomizationStore()
@@ -173,6 +239,16 @@ export function PersonalizationSettings({ showCategories = true }: { showCategor
   const builtinCategories: [string, string][] = Object.entries(CATEGORY_CONFIG).map(
     ([id, cfg]) => [id, cfg.label]
   )
+  const customPaymentMap = useMemo(
+    () => new Map(customPayments.map(item => [item.id, item])),
+    [customPayments]
+  )
+  const visibleBuiltinPayments = builtinPayments.filter(([id]) => !hiddenPaymentIds.includes(id))
+  const mergedPayments = [
+    ...visibleBuiltinPayments.map(([id, label]) => customPaymentMap.get(id) ?? { id, label, keywords: [id] }),
+    ...customPayments.filter(item => !builtinPayments.some(([builtinId]) => builtinId === item.id)),
+  ]
+  const hiddenBuiltins = builtinPayments.filter(([id]) => hiddenPaymentIds.includes(id))
 
   return (
     <div>
@@ -187,9 +263,9 @@ export function PersonalizationSettings({ showCategories = true }: { showCategor
               <Wallet className="w-4 h-4 text-[var(--sk-cyan)]" />
             </div>
             <h3 className="text-sm font-semibold text-[var(--sk-text)]">Metode Bayar</h3>
-            {customPayments.length > 0 && (
+            {mergedPayments.length > 0 && (
               <span className="ml-auto text-xs font-medium text-[var(--sk-cyan)] bg-[var(--sk-cyan-dim)] px-2 py-0.5 rounded-full">
-                {customPayments.length} kustom
+                {mergedPayments.length} aktif
               </span>
             )}
           </div>
@@ -200,17 +276,36 @@ export function PersonalizationSettings({ showCategories = true }: { showCategor
             onAdd={addCustomPayment}
           />
 
-          {customPayments.length > 0 && (
+          {mergedPayments.length > 0 && (
             <div className="mt-2 flex flex-col gap-2">
-              {customPayments.map(payment => (
-                <CustomChip key={payment.id} item={payment} onRemove={() => removeCustomPayment(payment.id)} />
+              {mergedPayments.map(payment => (
+                <CustomChip
+                  key={payment.id}
+                  item={payment}
+                  onRemove={() => removeCustomPayment(payment.id)}
+                  onUpdate={(label, keywords) => updateCustomPayment(payment.id, { label, keywords })}
+                />
               ))}
             </div>
           )}
 
-          <div className="mt-3">
-            <BuiltinList title="Bawaan" items={builtinPayments} />
-          </div>
+          {hiddenBuiltins.length > 0 && (
+            <div className="mt-3 rounded-xl bg-[var(--sk-surface)] border border-[var(--sk-border)] px-3 py-3">
+              <p className="text-[11px] font-medium text-[var(--sk-text-dim)]">Disembunyikan</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {hiddenBuiltins.map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => restoreHiddenPayment(id)}
+                    className="rounded-full bg-[var(--sk-surface-2)] border border-[var(--sk-border)] px-2.5 py-1 text-[11px] text-[var(--sk-text-muted)]"
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </section>
 
         {showCategories && (

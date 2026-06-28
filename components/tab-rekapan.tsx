@@ -7,8 +7,10 @@ import {
   PieChart, Pie, Cell,
 } from 'recharts'
 import { ChevronLeft, ChevronRight, X } from 'lucide-react'
-import { useTransactionActions, useTransactionData } from '@/lib/store'
+import { useTransactionActions, useTransactionData, useTransactionStatus } from '@/lib/store'
 import { TransactionItem } from '@/components/transaction-item'
+import { TransactionList } from '@/components/transaction-list'
+import { FilterTabs, type FilterTab } from '@/components/filter-tabs'
 import {
   dailyAggregates, transactionsForDay, trendSeries, trendSeriesForPeriod, topSavedCategory,
   categoryBreakdown, monthlyTotals,
@@ -19,7 +21,7 @@ import { dayKey } from '@/lib/stats'
 import { getCategoryConfig, getCategoryHex } from '@/components/category-badge'
 import { cn } from '@/lib/utils'
 
-type RekapView = 'kalender' | 'tren'
+type RekapView = 'kalender' | 'history' | 'tren'
 type TrendMode = TrendRange | 'custom'
 
 const DAYS_SHORT = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab']
@@ -172,17 +174,15 @@ function CalendarView() {
             : 0
           const isToday = cell.key === today
           const isSelected = cell.key === selectedDay
-          const dominantAmount = agg ? Math.max(agg.expense, agg.income) : 0
-          const dominantTone = agg && agg.income > agg.expense ? 'income' : 'expense'
 
           return (
             <button
               key={cell.key}
               onClick={() => setSelectedDay(k => k === cell.key ? null : cell.key)}
-              aria-label={`${cell.day}, pengeluaran ${formatIDR(agg?.expense ?? 0)}`}
+              aria-label={`${cell.day}, masuk ${formatIDR(agg?.income ?? 0)}, keluar ${formatIDR(agg?.expense ?? 0)}`}
               aria-pressed={isSelected}
               className={cn(
-                'aspect-square rounded-lg flex flex-col items-center justify-center gap-0.5 transition-all duration-150 relative',
+                'min-h-[58px] rounded-lg flex flex-col items-center justify-start gap-0.5 transition-all duration-150 relative px-1 py-1.5',
                 isSelected
                   ? 'ring-1 ring-[var(--sk-cyan)] bg-[var(--sk-cyan-dim)]'
                   : isToday
@@ -206,14 +206,20 @@ function CalendarView() {
                       background: agg.income > agg.expense
                         ? 'var(--sk-green)'
                         : `rgba(248,113,113,${0.4 + intensity * 0.6})`
-                    }}
+                      }}
                   />
-                  <span className={cn(
-                    'text-[11px] leading-none tabular-nums max-w-full truncate',
-                    dominantTone === 'income' ? 'text-[var(--sk-green)]' : 'text-[var(--sk-red)]'
-                  )}>
-                    {formatIDRCompact(dominantAmount).replace('Rp ', '')}
-                  </span>
+                  <div className="w-full min-w-0 space-y-0.5">
+                    {agg.income > 0 && (
+                      <span className="block text-[8px] leading-none tabular-nums text-[var(--sk-green)] truncate">
+                        +{formatIDR(agg.income)}
+                      </span>
+                    )}
+                    {agg.expense > 0 && (
+                      <span className="block text-[8px] leading-none tabular-nums text-[var(--sk-red)] truncate">
+                        -{formatIDR(agg.expense)}
+                      </span>
+                    )}
+                  </div>
                 </>
               )}
             </button>
@@ -235,12 +241,12 @@ function CalendarView() {
                 <div className="flex items-center gap-3 mt-0.5">
                   {selectedAgg.expense > 0 && (
                     <span className="text-xs font-semibold tabular-nums text-[var(--sk-red)]">
-                      -{formatIDRCompact(selectedAgg.expense)}
+                      -{formatIDR(selectedAgg.expense)}
                     </span>
                   )}
                   {selectedAgg.income > 0 && (
                     <span className="text-xs font-semibold tabular-nums text-[var(--sk-green)]">
-                      +{formatIDRCompact(selectedAgg.income)}
+                      +{formatIDR(selectedAgg.income)}
                     </span>
                   )}
                 </div>
@@ -481,9 +487,6 @@ function TrenView() {
 
   return (
     <div>
-      <MonthlyAllocationCard />
-
-      {/* Range selector */}
       <div className="flex flex-wrap gap-1.5 mb-3">
         {RANGES.map(r => (
           <button
@@ -537,6 +540,8 @@ function TrenView() {
           </p>
         </div>
       )}
+
+      <MonthlyAllocationCard />
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 gap-3 mb-5">
@@ -635,6 +640,161 @@ function TrenView() {
 
 
 // ── Main tab ──────────────────────────────────────────────────────────────────
+function HistoryView() {
+  const { transactions } = useTransactionData()
+  const { deleteTransaction, updateTransaction } = useTransactionActions()
+  const { newTransactionId } = useTransactionStatus()
+  const [activeFilter, setActiveFilter] = useState<FilterTab>('semua')
+  const [range, setRange] = useState<TrendMode>('30d')
+  const [customStart, setCustomStart] = useState(() => dayKeyFromOffset(29))
+  const [customEnd, setCustomEnd] = useState(() => dayKeyFromOffset(0))
+
+  const customStartDate = customStart ? dateFromDayKey(customStart) : null
+  const customEndDate = customEnd ? dateFromDayKey(customEnd) : null
+  const customValid = !!customStartDate && !!customEndDate && customStartDate <= customEndDate
+
+  const period = useMemo(() => {
+    const now = new Date()
+    const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)
+    if (range === 'custom') {
+      if (!customValid || !customStartDate || !customEndDate) return null
+      return {
+        start: customStartDate,
+        end: new Date(customEndDate.getFullYear(), customEndDate.getMonth(), customEndDate.getDate() + 1),
+      }
+    }
+
+    const days = range === '7d' ? 6 : range === '30d' ? 29 : 364
+    return {
+      start: dateFromDayKey(dayKeyFromOffset(days)),
+      end,
+    }
+  }, [customEndDate, customStartDate, customValid, range])
+
+  const rangedTransactions = useMemo(
+    () => period
+      ? transactions.filter(t => t.date >= period.start && t.date < period.end)
+      : [],
+    [period, transactions]
+  )
+
+  const sortedTransactions = useMemo(
+    () => [...rangedTransactions].sort((a, b) => b.date.getTime() - a.date.getTime()),
+    [rangedTransactions]
+  )
+
+  const filteredTransactions = useMemo(() => {
+    if (activeFilter === 'semua') return sortedTransactions
+    if (activeFilter === 'pengeluaran') return sortedTransactions.filter(t => t.type === 'expense')
+    return sortedTransactions.filter(t => t.type === 'income')
+  }, [activeFilter, sortedTransactions])
+
+  const totals = useMemo(() => {
+    let income = 0
+    let expense = 0
+    for (const transaction of rangedTransactions) {
+      if (transaction.kind === 'transfer' || transaction.kind === 'saving') continue
+      if (transaction.type === 'income') income += transaction.amount
+      else expense += transaction.amount
+    }
+    return { income, expense }
+  }, [rangedTransactions])
+
+  const counts = useMemo(() => ({
+    semua: sortedTransactions.length,
+    pengeluaran: sortedTransactions.filter(t => t.type === 'expense').length,
+    pemasukan: sortedTransactions.filter(t => t.type === 'income').length,
+  }), [sortedTransactions])
+
+  const rangeLabel = period
+    ? new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }).format(period.start)
+      + ' - '
+      + new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(period.end.getFullYear(), period.end.getMonth(), period.end.getDate() - 1))
+    : 'Pilih tanggal awal dan akhir yang valid'
+
+  return (
+    <div>
+      <div className="flex flex-wrap gap-1.5 mb-3">
+        {RANGES.map(r => (
+          <button
+            key={r.id}
+            onClick={() => setRange(r.id)}
+            className={cn(
+              'px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
+              range === r.id
+                ? 'bg-[var(--sk-cyan)] text-[#0B0F19]'
+                : 'bg-[var(--sk-surface-2)] text-[var(--sk-text-muted)] hover:bg-[var(--sk-surface-3)]'
+            )}
+          >
+            {r.label}
+          </button>
+        ))}
+      </div>
+
+      {range === 'custom' && (
+        <div className="rounded-2xl bg-[var(--sk-surface)] border border-[var(--sk-border)] p-3.5 mb-4">
+          <div className="grid grid-cols-2 gap-2 mb-2">
+            <label className="min-w-0">
+              <span className="block text-[10px] text-[var(--sk-text-dim)] uppercase tracking-widest mb-1">
+                Dari
+              </span>
+              <input
+                type="date"
+                value={customStart}
+                onChange={e => setCustomStart(e.target.value)}
+                className="w-full min-w-0 rounded-lg border border-[var(--sk-border)] bg-[var(--sk-surface-2)] px-2.5 py-2 text-xs text-[var(--sk-text)] outline-none focus:border-[var(--sk-cyan)]"
+              />
+            </label>
+            <label className="min-w-0">
+              <span className="block text-[10px] text-[var(--sk-text-dim)] uppercase tracking-widest mb-1">
+                Sampai
+              </span>
+              <input
+                type="date"
+                value={customEnd}
+                onChange={e => setCustomEnd(e.target.value)}
+                className="w-full min-w-0 rounded-lg border border-[var(--sk-border)] bg-[var(--sk-surface-2)] px-2.5 py-2 text-xs text-[var(--sk-text)] outline-none focus:border-[var(--sk-cyan)]"
+              />
+            </label>
+          </div>
+          <p className={cn('text-[11px]', period ? 'text-[var(--sk-text-dim)]' : 'text-[var(--sk-red)]')}>
+            History: {rangeLabel}
+          </p>
+        </div>
+      )}
+
+      {range !== 'custom' && (
+        <p className="text-[11px] text-[var(--sk-text-dim)] mb-3">
+          History: {rangeLabel}
+        </p>
+      )}
+
+      <div className="grid grid-cols-2 gap-3 mb-4">
+        <div className="rounded-xl bg-[var(--sk-surface)] border border-[var(--sk-border)] p-3.5">
+          <p className="text-[10px] text-[var(--sk-text-dim)] uppercase tracking-widest mb-1">Total keluar</p>
+          <p className="text-base font-bold tabular-nums text-[var(--sk-red)]">{formatIDR(totals.expense)}</p>
+        </div>
+        <div className="rounded-xl bg-[var(--sk-surface)] border border-[var(--sk-border)] p-3.5">
+          <p className="text-[10px] text-[var(--sk-text-dim)] uppercase tracking-widest mb-1">Total masuk</p>
+          <p className="text-base font-bold tabular-nums text-[var(--sk-green)]">{formatIDR(totals.income)}</p>
+        </div>
+      </div>
+
+      <div className="sticky top-[97px] z-10 bg-[var(--sk-bg)] backdrop-blur-xl py-3 border-y border-[var(--sk-border)] mb-3">
+        <FilterTabs active={activeFilter} onChange={setActiveFilter} counts={counts} />
+      </div>
+
+      <TransactionList
+        transactions={filteredTransactions}
+        onDelete={deleteTransaction}
+        onUpdate={updateTransaction}
+        newTransactionId={newTransactionId}
+        className="px-0 md:px-0"
+      />
+    </div>
+  )
+}
+
 export const TabRekapan = memo(function TabRekapan() {
   const [view, setView] = useState<RekapView>('kalender')
 
@@ -644,8 +804,8 @@ export const TabRekapan = memo(function TabRekapan() {
       <div className="sticky top-0 z-20 bg-[var(--sk-bg)] backdrop-blur-xl border-b border-[var(--sk-border)] px-4 md:px-8 py-4">
         <h2 className="text-base font-semibold text-[var(--sk-text)] mb-3">Rekapan</h2>
         {/* Toggle */}
-        <div className="inline-flex bg-[var(--sk-surface)] rounded-xl p-1 border border-[var(--sk-border)]">
-          {(['kalender', 'tren'] as RekapView[]).map(v => (
+        <div className="inline-flex bg-[var(--sk-surface)] rounded-xl p-1 border border-[var(--sk-border)]" data-tour="rekapan-tabs">
+          {(['kalender', 'history', 'tren'] as RekapView[]).map(v => (
             <button
               key={v}
               onClick={() => setView(v)}
@@ -656,7 +816,7 @@ export const TabRekapan = memo(function TabRekapan() {
                   : 'text-[var(--sk-text-dim)] hover:text-[var(--sk-text-muted)]'
               )}
             >
-              {v === 'kalender' ? 'Kalender' : 'Tren'}
+              {v === 'kalender' ? 'Kalender' : v === 'history' ? 'History' : 'Tren'}
             </button>
           ))}
         </div>
@@ -664,6 +824,7 @@ export const TabRekapan = memo(function TabRekapan() {
 
       <div className="flex-1 px-4 md:px-8 pt-5 pb-8">
         {view === 'kalender' && <CalendarView />}
+        {view === 'history' && <HistoryView />}
         {view === 'tren' && <TrenView />}
       </div>
     </div>

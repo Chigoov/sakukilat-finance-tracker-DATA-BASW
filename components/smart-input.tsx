@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
-import { ArrowRightLeft, Mic, PiggyBank, SendHorizonal, Sparkles, SlidersHorizontal, X, Loader2, TrendingDown, TrendingUp } from 'lucide-react'
+import { ArrowRightLeft, Info, Mic, PiggyBank, SendHorizonal, Sparkles, SlidersHorizontal, X, Loader2, TrendingDown, TrendingUp } from 'lucide-react'
 import { parseEntry, formatIDR, type ParserExtras } from '@/lib/parser'
 import { ManualEntryForm } from '@/components/manual-entry-form'
 import { cn } from '@/lib/utils'
@@ -13,6 +13,7 @@ interface ParsePreview {
   amount: number
   type?: 'expense' | 'income'
   category?: string
+  subcategory?: string
   paymentMethod?: string
   fromWalletId?: string
   toWalletId?: string
@@ -54,14 +55,11 @@ interface SmartInputProps {
   className?: string
   parserExtras?: ParserExtras
   autoFocus?: boolean
-  /** Recent successful input strings from history. When provided, they
-   *  replace the static hint chips so users see their own past patterns. */
-  recentInputs?: string[]
 }
 
 type InputMode = 'auto' | 'expense' | 'income'
 
-export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, autoFocus, recentInputs }: SmartInputProps) {
+export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, autoFocus }: SmartInputProps) {
   const [value, setValue] = useState('')
   const [preview, setPreview] = useState<ParsePreview | null>(null)
   const [focused, setFocused] = useState(false)
@@ -69,6 +67,7 @@ export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, au
   const [localSubmitting, setLocalSubmitting] = useState(false)
   const [mode, setMode] = useState<InputMode>('auto')
   const [manualOpen, setManualOpen] = useState(false)
+  const [guideOpen, setGuideOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const locked = Boolean(isSubmitting || localSubmitting)
 
@@ -145,28 +144,6 @@ export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, au
     return EXAMPLE_HINTS
   }, [mode])
 
-  // History-first chip suggestions. Dedupe + cap at 4. Fallback to static.
-  const chipHints = useMemo(() => {
-    const seen = new Set<string>()
-    const out: string[] = []
-    if (recentInputs) {
-      for (const raw of recentInputs) {
-        const cleaned = raw.replace(/^\[1\/\d+\]\s*/, '').trim().toLowerCase()
-        if (!cleaned || seen.has(cleaned)) continue
-        seen.add(cleaned)
-        out.push(cleaned)
-        if (out.length >= 4) break
-      }
-    }
-    if (out.length < 4) {
-      for (const h of activeHints) {
-        if (seen.has(h)) continue
-        out.push(h)
-        if (out.length >= 4) break
-      }
-    }
-    return out
-  }, [recentInputs, activeHints])
   const placeholderHint = activeHints[hintIndex % activeHints.length]
 
   // Cycle through example hints
@@ -208,6 +185,7 @@ export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, au
           amount: parsed.amount,
           type: parsed.type,
           category: parsed.category,
+          subcategory: parsed.subcategory,
           paymentMethod: parsed.paymentMethod,
           confidence: parsed.confidence,
           warning: parsed.warning,
@@ -254,9 +232,14 @@ export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, au
   const categoryConfig = preview?.category ? getCategoryConfig(preview.category) : null
   const CategoryIcon = categoryConfig?.icon
   const MoveIcon = preview?.kind === 'saving' ? PiggyBank : ArrowRightLeft
+  const applyExample = useCallback((example: string, nextMode: InputMode = 'auto') => {
+    setMode(nextMode)
+    setValue(example)
+    requestAnimationFrame(() => inputRef.current?.focus())
+  }, [])
 
   return (
-    <div className={cn('w-full', className)}>
+    <div className={cn('w-full', className)} data-tour="smart-input">
       {(focused || value.trim() || mode !== 'auto') && (
       <div className="mb-2 flex justify-center gap-1.5 px-1">
         {([
@@ -303,6 +286,11 @@ export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, au
               <span className="text-xs text-[var(--sk-text-muted)] mr-1.5 capitalize truncate">
                 {preview.description}
               </span>
+              {preview.subcategory && (
+                <span className="text-[10px] text-[var(--sk-cyan)] mr-1.5">
+                  /{preview.subcategory}
+                </span>
+              )}
               {preview.warning && (
                 <span className="text-[10px] text-[var(--sk-amber)] mr-1.5">
                   {preview.warning}
@@ -343,32 +331,55 @@ export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, au
 
       {/* Tappable suggestion chips — instead of just a rotating placeholder.
           Fills the input on tap so the user doesn't have to memorize the syntax. */}
-      {focused && !value.trim() && (
-        <div className="mb-2 flex gap-1.5 px-1 overflow-x-auto no-scrollbar" role="list">
-          {chipHints.map((hint) => (
-            <button
-              key={hint}
-              type="button"
-              role="listitem"
-              className="sk-suggest-chip"
-              // Prevent input blur on tap so the chip bar stays visible during the click.
-              // iOS Safari fires touchstart before mousedown; cover both.
-              onMouseDown={(e) => e.preventDefault()}
-              onTouchStart={(e) => e.preventDefault()}
-              onClick={() => {
-                setValue(hint)
-                requestAnimationFrame(() => inputRef.current?.focus())
-              }}
-            >
-              <Sparkles className="w-3 h-3 text-[var(--sk-cyan)]" />
-              {hint}
-            </button>
-          ))}
-        </div>
-      )}
-
       {/* Input container */}
       <div
+        className="relative"
+      >
+        {guideOpen && (
+          <button
+            type="button"
+            aria-label="Tutup panduan Smart Tracker"
+            onClick={() => setGuideOpen(false)}
+            className="fixed inset-0 z-30 cursor-default"
+          />
+        )}
+
+        {guideOpen && (
+          <div className="absolute bottom-[calc(100%+8px)] right-2 z-40 w-[min(280px,calc(100vw-32px))] rounded-2xl bg-[var(--sk-surface)] border border-[var(--sk-border)] px-3 py-3 shadow-2xl">
+            <p className="text-xs font-semibold text-[var(--sk-text)]">Panduan Smart Tracker</p>
+            <ol className="mt-2 space-y-1.5 text-[11px] leading-relaxed text-[var(--sk-text-dim)]">
+              <li>1. Tulis aktivitas + nominal + saku.</li>
+              <li>2. Contoh: `kopi 18.500 ovo` atau `gaji 5jt bca`.</li>
+              <li>3. Pindah uang: `pindah 100k bca ke gopay`.</li>
+              <li>4. Kalau belum pas, pakai tombol slider untuk isi manual.</li>
+            </ol>
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              <button
+                type="button"
+                onClick={() => { applyExample('kopi latte 18000 ovo'); setGuideOpen(false) }}
+                className="rounded-full bg-[var(--sk-surface-2)] border border-[var(--sk-border)] px-2.5 py-1 text-[10px] font-medium text-[var(--sk-text-muted)]"
+              >
+                Belanja
+              </button>
+              <button
+                type="button"
+                onClick={() => { applyExample('gaji 5000000 bca', 'income'); setGuideOpen(false) }}
+                className="rounded-full bg-[var(--sk-surface-2)] border border-[var(--sk-border)] px-2.5 py-1 text-[10px] font-medium text-[var(--sk-text-muted)]"
+              >
+                Pemasukan
+              </button>
+              <button
+                type="button"
+                onClick={() => { applyExample('pindah 100000 bca ke gopay'); setGuideOpen(false) }}
+                className="rounded-full bg-[var(--sk-surface-2)] border border-[var(--sk-border)] px-2.5 py-1 text-[10px] font-medium text-[var(--sk-text-muted)]"
+              >
+                Pindah uang
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div
         className={cn(
           'flex items-center gap-2 px-3 py-2.5 rounded-2xl transition-all duration-200',
           'bg-[var(--sk-surface-2)] border',
@@ -376,7 +387,7 @@ export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, au
             ? 'border-[var(--sk-cyan)] shadow-[0_0_0_3px_var(--sk-cyan-glow)]'
             : 'border-[var(--sk-border-2)]'
         )}
-      >
+        >
         {/* Sparkle icon */}
         <div className={cn(
           'flex-shrink-0 transition-colors duration-200',
@@ -428,6 +439,17 @@ export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, au
           </button>
         )}
 
+        <button
+          type="button"
+          onClick={() => setGuideOpen(open => !open)}
+          disabled={locked}
+          aria-label="Buka panduan Smart Tracker"
+          title="Panduan Smart Tracker"
+          className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 transition-all duration-150 bg-[var(--sk-surface-3)] text-[var(--sk-text-muted)] hover:text-[var(--sk-cyan)]"
+        >
+          <Info className="w-4 h-4" />
+        </button>
+
         {/* Manual entry — escape hatch when the parser can't help (or user wants
             explicit field control). Always available, hands the current value
             to the modal as a seed so users don't lose their keystrokes. */}
@@ -437,6 +459,7 @@ export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, au
           disabled={locked}
           aria-label="Catat manual"
           title="Catat manual — kontrol penuh kategori & saku"
+          data-tour="manual-entry"
           className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 transition-all duration-150 bg-[var(--sk-surface-3)] text-[var(--sk-text-muted)] hover:text-[var(--sk-text)]"
         >
           <SlidersHorizontal className="w-4 h-4" />
@@ -475,6 +498,7 @@ export function SmartInput({ onSubmit, isSubmitting, className, parserExtras, au
             <SendHorizonal className="w-5 h-5" />
           )}
         </button>
+      </div>
       </div>
 
       {/* Helper text */}

@@ -7,7 +7,7 @@ import { GoalTracker } from '@/components/goal-tracker'
 import { RecurringManager } from '@/components/recurring-manager'
 import { CategoryManager } from '@/components/category-manager'
 import { PersonalizationSettings } from '@/components/personalization-settings'
-import { formatIDR, formatIDRCompact } from '@/lib/parser'
+import { formatIDR } from '@/lib/parser'
 import { parseAmountInput } from '@/lib/amount'
 import type { WalletType } from '@/lib/mock-data'
 import { cn } from '@/lib/utils'
@@ -40,7 +40,7 @@ function BudgetSettings() {
         </div>
         <h3 className="text-sm font-semibold text-[var(--sk-text)]">Budget Bulanan</h3>
         <span className="ml-auto text-xs font-medium text-[var(--sk-amber)] bg-[var(--sk-amber-dim)] px-2 py-0.5 rounded-full">
-          {formatIDRCompact(monthlyBudget)}
+          {formatIDR(monthlyBudget)}
         </span>
       </div>
 
@@ -81,12 +81,15 @@ function WalletManager() {
   const [balance, setBalance] = useState('')
   const [keywords, setKeywords] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [showAll, setShowAll] = useState(false)
   const [draft, setDraft] = useState({
     label: '',
     type: 'ewallet' as WalletType,
     balance: '',
     keywords: '',
   })
+  const visibleWallets = showAll ? wallets : wallets.slice(0, 4)
+  const hasHiddenWallets = wallets.length > visibleWallets.length
 
   const handleAdd = () => {
     const name = label.trim()
@@ -125,7 +128,7 @@ function WalletManager() {
   }
 
   return (
-    <section>
+    <section data-tour="wallets">
       <div className="flex items-center gap-2 mb-3">
         <div className="w-7 h-7 rounded-lg bg-[var(--sk-cyan-dim)] flex items-center justify-center">
           <Wallet className="w-4 h-4 text-[var(--sk-cyan)]" />
@@ -194,7 +197,7 @@ function WalletManager() {
       </div>
 
       <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
-        {wallets.map(wallet => {
+        {visibleWallets.map(wallet => {
           const isEditing = editingId === wallet.id
 
           return (
@@ -266,7 +269,7 @@ function WalletManager() {
                       </span>
                     </div>
                     <p className="text-xs font-semibold tabular-nums text-[var(--sk-text-muted)]" data-amount>
-                      {formatIDRCompact(wallet.balance)}
+                      {formatIDR(wallet.balance)}
                     </p>
                   </div>
                   <button
@@ -292,6 +295,15 @@ function WalletManager() {
           )
         })}
       </div>
+      {(hasHiddenWallets || showAll) && (
+        <button
+          type="button"
+          onClick={() => setShowAll(value => !value)}
+          className="mt-3 w-full rounded-xl bg-[var(--sk-surface)] border border-[var(--sk-border)] px-3 py-2.5 text-xs font-semibold text-[var(--sk-cyan)] hover:bg-[var(--sk-surface-2)] transition-colors"
+        >
+          {showAll ? 'Ringkas daftar saku' : `Lihat semua ${wallets.length} saku`}
+        </button>
+      )}
     </section>
   )
 }
