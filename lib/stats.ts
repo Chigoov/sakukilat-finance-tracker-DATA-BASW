@@ -83,6 +83,55 @@ export interface TrendPoint {
   income: number
 }
 
+const MS_DAY = 24 * 60 * 60 * 1000
+
+function startOfDay(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate())
+}
+
+function monthKey(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+}
+
+export function trendSeriesForPeriod(transactions: Transaction[], start: Date, end: Date): TrendPoint[] {
+  const from = startOfDay(start)
+  const until = new Date(end.getFullYear(), end.getMonth(), end.getDate() + 1)
+  if (until <= from) return []
+
+  const days = Math.ceil((until.getTime() - from.getTime()) / MS_DAY)
+  const groupMonthly = days > 62
+  const formatter = groupMonthly
+    ? new Intl.DateTimeFormat('id-ID', { month: 'short', year: '2-digit' })
+    : new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'short' })
+  const keyedPoints: Array<TrendPoint & { key: string }> = []
+
+  if (groupMonthly) {
+    for (
+      let cursor = new Date(from.getFullYear(), from.getMonth(), 1);
+      cursor < until;
+      cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1)
+    ) {
+      keyedPoints.push({ key: monthKey(cursor), label: formatter.format(cursor), expense: 0, income: 0 })
+    }
+  } else {
+    for (let i = 0; i < days; i++) {
+      const cursor = new Date(from.getFullYear(), from.getMonth(), from.getDate() + i)
+      keyedPoints.push({ key: dayKey(cursor), label: formatter.format(cursor), expense: 0, income: 0 })
+    }
+  }
+
+  const pointByKey = new Map(keyedPoints.map(point => [point.key, point]))
+  for (const t of transactions) {
+    if (isMoneyMove(t) || t.date < from || t.date >= until) continue
+    const point = pointByKey.get(groupMonthly ? monthKey(t.date) : dayKey(t.date))
+    if (!point) continue
+    if (t.type === 'expense') point.expense += t.amount
+    else point.income += t.amount
+  }
+
+  return keyedPoints.map(({ key, ...point }) => point)
+}
+
 export function trendSeries(transactions: Transaction[], range: TrendRange): TrendPoint[] {
   const now = new Date()
 
