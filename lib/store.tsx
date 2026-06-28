@@ -391,7 +391,7 @@ function applyProfileSettings(user: MockUser, profileName: string | null, profil
 }
 
 function shouldUseLocalDemoAuth(): boolean {
-  return false
+  return true
 }
 
 function shouldUseRedirectAuth(): boolean {
@@ -610,7 +610,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         redirectHandledRef.current = true
 
         if (!result?.user || cancelled) {
-          if (!cancelled && !firebaseAuth.currentUser) setAuthReady(true)
+          if (!cancelled && !firebaseAuth.currentUser) {
+            setUser(shouldUseLocalDemoAuth() ? applyProfileSettings(DEMO_USER, profileNameRef.current, profileAvatarRef.current) : null)
+            setAuthReady(true)
+          }
           return
         }
 
@@ -634,6 +637,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         redirectHandledRef.current = true
         console.error('Firebase Google redirect sign-in failed:', error)
         if (cancelled) return
+        setUser(shouldUseLocalDemoAuth() ? applyProfileSettings(DEMO_USER, profileNameRef.current, profileAvatarRef.current) : null)
         setAuthReady(true)
         showToast('Login Google gagal. Coba lagi sebentar.', 'error')
       })
