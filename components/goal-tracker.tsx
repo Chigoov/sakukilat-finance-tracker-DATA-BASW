@@ -48,7 +48,9 @@ function loadGoals(): Goal[] {
     const raw = window.localStorage.getItem(GOAL_STORAGE_KEY)
     if (!raw) return []
     const parsed = JSON.parse(raw) as Goal[]
-    return Array.isArray(parsed) ? parsed.filter(isGoal) : []
+    const cleaned = Array.isArray(parsed) ? parsed.filter(isGoal) : []
+    if (!Array.isArray(parsed) || cleaned.length !== parsed.length) saveGoals(cleaned)
+    return cleaned
   } catch { return [] }
 }
 
@@ -67,7 +69,10 @@ function loadCelebrated(): Set<string> {
     const raw = window.localStorage.getItem(CELEBRATED_KEY)
     if (!raw) return new Set()
     const arr = JSON.parse(raw)
-    return new Set(Array.isArray(arr) ? arr : [])
+    const cleaned = Array.isArray(arr) ? arr.filter((item): item is string => typeof item === 'string') : []
+    const set = new Set(cleaned)
+    if (!Array.isArray(arr) || cleaned.length !== arr.length || set.size !== cleaned.length) saveCelebrated(set)
+    return set
   } catch { return new Set() }
 }
 

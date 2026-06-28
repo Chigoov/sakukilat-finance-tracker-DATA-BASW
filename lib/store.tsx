@@ -234,6 +234,14 @@ const SEED_CATEGORIES: CustomCategory[] = [
 ]
 const DEFAULT_MONTHLY_BUDGET = 0
 export const STORAGE_KEY = 'sakukilat:v2:local-state'
+const ONBOARDING_STORAGE_KEY_PREFIX = 'sakukilat:v2:onboarding-completed-v'
+const KNOWN_STORAGE_KEYS = new Set([
+  STORAGE_KEY,
+  'sakukilat:v2:goals',
+  'sakukilat:v2:celebrated-goals',
+  'sakukilat:v2:recurring',
+  'sakukilat:v2:celebrated-streak',
+])
 const DEMO_USER: MockUser = {
   name: 'Teman SakuKilat',
   givenName: 'Teman',
@@ -339,6 +347,13 @@ function loadPersistedState(): PersistedState {
   if (typeof window === 'undefined') return {}
 
   try {
+    for (let i = window.localStorage.length - 1; i >= 0; i -= 1) {
+      const key = window.localStorage.key(i)
+      if (!key?.startsWith('sakukilat:')) continue
+      if (KNOWN_STORAGE_KEYS.has(key) || key.startsWith(ONBOARDING_STORAGE_KEY_PREFIX)) continue
+      window.localStorage.removeItem(key)
+    }
+
     const raw = window.localStorage.getItem(STORAGE_KEY)
     if (!raw) return {}
     const parsed = JSON.parse(raw) as PersistedState

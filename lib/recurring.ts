@@ -42,14 +42,19 @@ function loadFromStorage(): RecurringTemplate[] {
     const raw = window.localStorage.getItem(STORAGE_KEY)
     if (!raw) return []
     const parsed = JSON.parse(raw)
-    if (!Array.isArray(parsed)) return []
-    return parsed.filter((t): t is RecurringTemplate =>
+    if (!Array.isArray(parsed)) {
+      saveToStorage([])
+      return []
+    }
+    const cleaned = parsed.filter((t): t is RecurringTemplate =>
       typeof t === 'object' && t !== null
       && typeof t.id === 'string'
       && typeof t.input === 'string'
       && typeof t.nextDueAt === 'number'
       && (t.cadence === 'daily' || t.cadence === 'weekly' || t.cadence === 'monthly')
     )
+    if (cleaned.length !== parsed.length) saveToStorage(cleaned)
+    return cleaned
   } catch {
     return []
   }
