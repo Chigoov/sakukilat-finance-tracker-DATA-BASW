@@ -240,8 +240,6 @@ const DEMO_USER: MockUser = {
   email: 'demo@sakukilat.local',
   avatarUrl: '/avatar.png',
 }
-const REDIRECT_AUTH_KEY = 'sakukilat:google-redirect'
-const REDIRECT_AUTH_MAX_AGE_MS = 10 * 60 * 1000
 
 interface PersistedState {
   schemaVersion?: number
@@ -394,28 +392,6 @@ function shouldUseRedirectAuth(): boolean {
   return isSmallTouchDevice || isStandalone
 }
 
-function markRedirectAuthPending() {
-  if (typeof window === 'undefined') return
-  window.sessionStorage.setItem(REDIRECT_AUTH_KEY, String(Date.now()))
-}
-
-function clearRedirectAuthPending() {
-  if (typeof window === 'undefined') return
-  window.sessionStorage.removeItem(REDIRECT_AUTH_KEY)
-}
-
-function hasFreshRedirectAuthPending(): boolean {
-  if (typeof window === 'undefined') return false
-
-  const raw = window.sessionStorage.getItem(REDIRECT_AUTH_KEY)
-  const timestamp = Number(raw)
-  if (!Number.isFinite(timestamp) || Date.now() - timestamp > REDIRECT_AUTH_MAX_AGE_MS) {
-    clearRedirectAuthPending()
-    return false
-  }
-  return true
-}
-
 function slugify(s: string): string {
   return s.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || `c-${Date.now()}`
 }
@@ -541,8 +517,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const cloudSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const profileNameRef = useRef(profileName)
   const profileAvatarRef = useRef(profileAvatarUrl)
-  const redirectPendingRef = useRef(false)
-  const redirectHandledRef = useRef(true)
+  const redirectHandledRef = useRef(false)
   const [cloudHydrated, setCloudHydrated] = useState(false)
 
   const dismissToast = useCallback(() => {
@@ -612,57 +587,48 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false
-    redirectPendingRef.current = hasFreshRedirectAuthPending()
-    redirectHandledRef.current = !redirectPendingRef.current
+    redirectHandledRef.current = false
 
     void initFirebaseAnalytics()
-    if (redirectPendingRef.current) {
-      void getRedirectResult(firebaseAuth)
-        .then(async result => {
-          redirectHandledRef.current = true
-          clearRedirectAuthPending()
-          redirectPendingRef.current = false
+    void getRedirectResult(firebaseAuth)
+      .then(async result => {
+        redirectHandledRef.current = true
 
-          if (!result?.user || cancelled) {
-            if (!cancelled && !firebaseAuth.currentUser) setAuthReady(true)
-            return
-          }
+        if (!result?.user || cancelled) {
+          if (!cancelled && !firebaseAuth.currentUser) setAuthReady(true)
+          return
+        }
 
-          setUser(applyProfileSettings(mapFirebaseUser(result.user), profileNameRef.current, profileAvatarRef.current))
-          try {
-            const remoteState = await loadUserCloudSlice<PersistedState>(result.user.uid, 'main')
-            if (!cancelled && remoteState && typeof remoteState === 'object') {
-              applyPersistedSnapshot(remoteState)
-            }
-          } catch (error) {
-            console.error('SakuKilat redirect cloud restore failed:', error)
-          } finally {
-            if (!cancelled) {
-              setCloudHydrated(true)
-              setAuthReady(true)
-            }
+        setUser(applyProfileSettings(mapFirebaseUser(result.user), profileNameRef.current, profileAvatarRef.current))
+        try {
+          const remoteState = await loadUserCloudSlice<PersistedState>(result.user.uid, 'main')
+          if (!cancelled && remoteState && typeof remoteState === 'object') {
+            applyPersistedSnapshot(remoteState)
           }
-          showToast('Login Google berhasil. Saku siap dipakai.', 'success')
-        })
-        .catch(error => {
-          redirectHandledRef.current = true
-          clearRedirectAuthPending()
-          redirectPendingRef.current = false
-          console.error('Firebase Google redirect sign-in failed:', error)
-          if (cancelled) return
-          setAuthReady(true)
-          showToast('Login Google gagal. Coba lagi sebentar.', 'error')
-        })
-    }
+        } catch (error) {
+          console.error('SakuKilat redirect cloud restore failed:', error)
+        } finally {
+          if (!cancelled) {
+            setCloudHydrated(true)
+            setAuthReady(true)
+          }
+        }
+        showToast('Login Google berhasil. Saku siap dipakai.', 'success')
+      })
+      .catch(error => {
+        redirectHandledRef.current = true
+        console.error('Firebase Google redirect sign-in failed:', error)
+        if (cancelled) return
+        setAuthReady(true)
+        showToast('Login Google gagal. Coba lagi sebentar.', 'error')
+      })
 
     const unsubscribe = onAuthStateChanged(
       firebaseAuth,
       currentUser => {
         void (async () => {
           if (!currentUser) {
-            if (redirectPendingRef.current && !redirectHandledRef.current) return
-            clearRedirectAuthPending()
-            redirectPendingRef.current = false
+            if (!redirectHandledRef.current) return
             setCloudHydrated(false)
             const nextUser = shouldUseLocalDemoAuth() ? DEMO_USER : null
             setUser(nextUser ? applyProfileSettings(nextUser, profileNameRef.current, profileAvatarRef.current) : null)
@@ -670,8 +636,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             return
           }
 
-          clearRedirectAuthPending()
-          redirectPendingRef.current = false
           redirectHandledRef.current = true
           setUser(applyProfileSettings(mapFirebaseUser(currentUser), profileNameRef.current, profileAvatarRef.current))
 
@@ -784,7 +748,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const signInWithGoogle = useCallback(async () => {
     try {
       if (shouldUseRedirectAuth()) {
-        markRedirectAuthPending()
         await signInWithRedirect(firebaseAuth, googleProvider)
         return
       }
@@ -803,7 +766,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         !code.includes('unauthorized-domain') &&
         !code.includes('operation-not-allowed')
       ) {
-        markRedirectAuthPending()
         await signInWithRedirect(firebaseAuth, googleProvider)
         return
       }

@@ -45,6 +45,17 @@ googleProvider.setCustomParameters({
 
 const CLOUD_COLLECTION = 'sakukilatUsers'
 
+export function stripUndefinedDeep(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stripUndefinedDeep)
+  if (!value || typeof value !== 'object') return value
+
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([, entry]) => entry !== undefined)
+      .map(([key, entry]) => [key, stripUndefinedDeep(entry)])
+  )
+}
+
 function userCloudRef(uid: string) {
   return doc(firebaseDb, CLOUD_COLLECTION, uid)
 }
@@ -61,7 +72,7 @@ export async function saveUserCloudSlice(uid: string, key: string, value: unknow
   if (!uid) return
   await setDoc(
     userCloudRef(uid),
-    { [key]: value, updatedAt: serverTimestamp() },
+    { [key]: stripUndefinedDeep(value), updatedAt: serverTimestamp() },
     { merge: true }
   )
 }
