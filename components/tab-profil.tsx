@@ -77,6 +77,7 @@ export function TabProfil() {
   const [profileNameDraft, setProfileNameDraft] = useState(user?.name ?? '')
   const [avatarBusy, setAvatarBusy] = useState(false)
   const avatarInputRef = useRef<HTMLInputElement>(null)
+  const isLocalMode = user?.email.endsWith('@sakukilat.local')
 
   const { income, expense, balance } = monthlyTotals(transactions)
 
@@ -157,10 +158,10 @@ export function TabProfil() {
           </div>
           <div className="flex-1 min-w-0">
             <p className="font-semibold text-[var(--sk-text)] truncate">{user.name}</p>
-            <p className="text-xs text-[var(--sk-text-dim)] truncate mt-0.5">{user.email}</p>
+            <p className="text-xs text-[var(--sk-text-dim)] truncate mt-0.5">{isLocalMode ? 'Mode lokal di perangkat ini' : user.email}</p>
             <div className="mt-2 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-[var(--sk-cyan-dim)] border border-[rgba(56,189,248,0.2)]">
               <Shield className="w-2.5 h-2.5 text-[var(--sk-cyan)]" />
-              <span className="text-[10px] text-[var(--sk-cyan)] font-medium">Login aktif</span>
+              <span className="text-[10px] text-[var(--sk-cyan)] font-medium">{isLocalMode ? 'Mode lokal' : 'Login aktif'}</span>
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
               <button

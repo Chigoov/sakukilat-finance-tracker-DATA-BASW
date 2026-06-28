@@ -19,7 +19,6 @@ import {
   type Context,
 } from 'react'
 import {
-  createSeedTransactions,
   createSeedWallets,
   generateId,
   type Transaction,
@@ -243,9 +242,9 @@ const KNOWN_STORAGE_KEYS = new Set([
   'sakukilat:v2:celebrated-streak',
 ])
 const DEMO_USER: MockUser = {
-  name: 'Teman SakuKilat',
-  givenName: 'Teman',
-  email: 'demo@sakukilat.local',
+  name: 'Perangkat Ini',
+  givenName: 'Kamu',
+  email: 'local-device@sakukilat.local',
   avatarUrl: '/avatar.png',
 }
 
@@ -263,7 +262,7 @@ interface PersistedState {
   profileAvatarUrl?: string | null
 }
 
-export const CURRENT_SCHEMA_VERSION = 3
+export const CURRENT_SCHEMA_VERSION = 4
 
 // ── v2 → v3 demo-data purge helpers ─────────────────────────────────────────
 // Old builds shipped with hard-coded seed transactions and pre-filled wallet
@@ -310,7 +309,7 @@ function migratePersistedState(state: PersistedState): PersistedState {
   const prevVersion = state.schemaVersion ?? 1
   const next: PersistedState = { ...state }
 
-  if (prevVersion < 3) {
+  if (prevVersion < 4) {
     // 1. Strip leftover seed transactions. User-entered ones (timestamp ids)
     //    survive untouched — `isLegacySeedTransactionId` only matches the
     //    fixed pre-baked patterns.
@@ -504,8 +503,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<MockUser | null>(null)
   const [authReady, setAuthReady] = useState(false)
 
-  const [transactions, setTransactions] = useState<Transaction[]>(() => reviveTransactions(persisted.transactions) ?? createSeedTransactions())
-  const [wallets, setWallets] = useState<WalletAccount[]>(() => Array.isArray(persisted.wallets) && persisted.wallets.length > 0 ? persisted.wallets : createSeedWallets())
+  const [transactions, setTransactions] = useState<Transaction[]>(() => reviveTransactions(persisted.transactions) ?? [])
+  const [wallets, setWallets] = useState<WalletAccount[]>(() => Array.isArray(persisted.wallets) && persisted.wallets.length > 0 ? persisted.wallets : createSeedWallets().map(wallet => ({ ...wallet, balance: 0 })))
   const [lastActiveWalletId, setLastActiveWalletId] = useState('tunai')
   const [newTransactionId, setNewTransactionId] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
