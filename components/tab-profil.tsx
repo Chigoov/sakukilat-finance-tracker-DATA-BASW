@@ -359,7 +359,7 @@ export function TabProfil() {
         {/* Footer */}
         <div className="text-center pt-4">
           <p className="text-[11px] text-[var(--sk-text-dim)]">
-            SakuKilat v2.0 — dibuat untuk ketenangan finansialmu
+            SakuKilat v2.0 — dibuat oleh Ardhika Argha
           </p>
         </div>
       </div>

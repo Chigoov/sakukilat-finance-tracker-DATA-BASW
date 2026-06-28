@@ -138,7 +138,7 @@ export function AuthGate() {
       </div>
 
       <footer className="absolute bottom-7 text-[11px] text-[var(--sk-text-dim)]">
-        SakuKilat v2.0 - dibuat untuk ketenangan finansialmu
+        SakuKilat v2.0 - dibuat oleh Ardhika Argha
       </footer>
     </main>
   )
