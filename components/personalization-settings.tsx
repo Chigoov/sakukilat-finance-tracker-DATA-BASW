@@ -155,7 +155,7 @@ function BuiltinList({ title, items }: { title: string; items: [string, string][
   )
 }
 
-export function PersonalizationSettings() {
+export function PersonalizationSettings({ showCategories = true }: { showCategories?: boolean }) {
   const {
     customPayments,
     customCategories,
@@ -213,6 +213,7 @@ export function PersonalizationSettings() {
           </div>
         </section>
 
+        {showCategories && (
         <section>
           <div className="flex items-center gap-2 mb-3">
             <div className="w-7 h-7 rounded-lg bg-[var(--sk-amber-dim)] flex items-center justify-center">
@@ -244,6 +245,7 @@ export function PersonalizationSettings() {
             <BuiltinList title="Bawaan" items={builtinCategories} />
           </div>
         </section>
+        )}
       </div>
     </div>
   )
