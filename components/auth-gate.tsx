@@ -115,8 +115,8 @@ export function AuthGate() {
           >
             <p className="text-xs font-semibold text-[var(--sk-red)]">{error}</p>
             {error.includes('Domain Vercel') && (
-              <p className="mt-1 text-[11px] leading-relaxed text-[var(--sk-text-muted)]">
-                Tambahkan sakukilat-finance-tracker.vercel.app di Firebase Authentication - Settings - Authorized domains.
+             <p className="mt-1 text-[11px] leading-relaxed text-[var(--sk-text-muted)]">
+                Tambahkan domain Vercel aktifmu di Firebase Authentication - Settings - Authorized domains.
               </p>
             )}
           </div>
