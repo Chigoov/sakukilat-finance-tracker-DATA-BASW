@@ -6,6 +6,7 @@ import { useBudgetStore, useWalletStore } from '@/lib/store'
 import { GoalTracker } from '@/components/goal-tracker'
 import { RecurringManager } from '@/components/recurring-manager'
 import { CategoryManager } from '@/components/category-manager'
+import { PersonalizationSettings } from '@/components/personalization-settings'
 import { formatIDR, formatIDRCompact } from '@/lib/parser'
 import { parseAmountInput } from '@/lib/amount'
 import type { WalletType } from '@/lib/mock-data'
@@ -366,17 +367,18 @@ export function TabSaku() {
       <div className="sticky top-0 z-20 bg-[var(--sk-bg)] backdrop-blur-xl border-b border-[var(--sk-border)] px-4 md:px-8 py-4">
         <h2 className="text-base font-semibold text-[var(--sk-text)]">Saku</h2>
         <p className="text-xs text-[var(--sk-text-dim)] mt-0.5">
-          Saldo, budget, pindah uang, dan tabungan.
+          Saldo, budget, pindah uang, kategori, dan otomatisasi.
         </p>
       </div>
 
       <div className="flex-1 px-4 md:px-8 py-5 flex flex-col gap-6 pb-10">
         <BudgetSettings />
+        <WalletManager />
+        <MoneyMovePanel />
         <RecurringManager />
         <GoalTracker />
-        <WalletManager />
+        <PersonalizationSettings showCategories={false} />
         <CategoryManager />
-        <MoneyMovePanel />
       </div>
     </div>
   )
